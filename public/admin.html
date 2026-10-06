@@ -1,0 +1,2588 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0ea5e9" />
+<title>CompAct Jr. — Painel</title>
+<!-- jsPDF + autoTable para exportação de PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  *,*::before,*::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    :root{
+    --prim:#6366f1; --prim-esc:#4338ca; --prim-cla:#e0e7ff;
+    --acen:#f472b6;
+    --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
+    --bg:#f8fafc; --bg-2:#ffffff; --bg-3:#f1f5f9;
+    --txt:#0f172a; --txt-2:#475569; --txt-3:#94a3b8;
+    --borda:#e2e8f0;
+    --sombra:0 2px 8px rgba(15,23,42,.06);
+    --sombra-forte:0 8px 24px rgba(15,23,42,.12);
+    --r:16px; --r-sm:10px;
+  }
+    /* Tema escuro: automático pelo SO, mas o usuário pode forçar claro */
+  @media (prefers-color-scheme: dark){
+    :root:not([data-tema="light"]){
+      --bg:#0f172a; --bg-2:#1e293b; --bg-3:#0b1220;
+      --txt:#f1f5f9; --txt-2:#cbd5e1; --txt-3:#94a3b8;
+      --borda:#334155;
+      --prim-cla:#312e81;
+      --sombra:0 2px 8px rgba(0,0,0,.3);
+      --sombra-forte:0 8px 24px rgba(0,0,0,.5);
+    }
+  }
+  /* Tema escuro forçado pelo usuário */
+  :root[data-tema="dark"]{
+    --bg:#0f172a; --bg-2:#1e293b; --bg-3:#0b1220;
+    --txt:#f1f5f9; --txt-2:#cbd5e1; --txt-3:#94a3b8;
+    --borda:#334155;
+    --prim-cla:#312e81;
+    --sombra:0 2px 8px rgba(0,0,0,.3);
+    --sombra-forte:0 8px 24px rgba(0,0,0,.5);
+  }
+  html,body{margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;
+    padding-bottom:env(safe-area-inset-bottom);min-height:100vh}
+  button,input,select,textarea{font-family:inherit}
+  button{cursor:pointer;border:none;background:none;color:inherit}
+  input,select,textarea{
+    width:100%;padding:12px;border:1px solid var(--borda);border-radius:var(--r-sm);
+    background:var(--bg-3);color:var(--txt);font-size:15px;margin-top:6px;
+    transition:border-color .15s;
+  }
+    /* Remove as setinhas dos inputs numéricos (Chrome, Safari, Edge) */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button{
+    -webkit-appearance:none;
+    appearance:none;
+    margin:0;
+  }
+  /* Remove as setinhas no Firefox */
+  input[type="number"]{
+    -moz-appearance:textfield;
+    appearance:textfield;
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--prim);box-shadow:0 0 0 3px var(--prim-cla)}
+  label{display:block;font-size:13px;font-weight:600;color:var(--txt-2);margin-top:14px}
+  label:first-child{margin-top:0}
+
+  /* ============ LOGIN ============ */
+  .login-wrap{min-height:100vh;display:grid;place-items:center;padding:20px;
+    background:linear-gradient(135deg,#312e81,#6366f1 55%,#a5b4fc)}
+  .login-card{background:var(--bg-2);border-radius:20px;padding:36px 28px;width:100%;max-width:400px;
+    box-shadow:0 24px 60px rgba(0,0,0,.35)}
+  .login-logo{width:64px;height:64px;border-radius:16px;margin:0 auto 16px;
+    background:linear-gradient(135deg,var(--prim),var(--acen));display:grid;place-items:center;
+    color:#fff;font-size:28px;font-weight:800}
+  .login-card h1{margin:0 0 6px;text-align:center;font-size:22px;letter-spacing:-.4px}
+  .login-card .sub{text-align:center;color:var(--txt-3);font-size:13.5px;margin:0 0 24px}
+  .btn-primario{
+    width:100%;padding:14px;border-radius:12px;
+    background:linear-gradient(135deg,var(--prim),var(--prim-esc));color:#fff;
+    font-weight:700;font-size:15px;letter-spacing:.2px;
+    box-shadow:0 4px 12px color-mix(in srgb, var(--prim) 40%, transparent);
+    transition:transform .1s;margin-top:22px;
+  }
+  .btn-primario:active{transform:scale(.98)}
+  .btn-primario:disabled{opacity:.6;cursor:not-allowed}
+  .erro{background:#fee2e2;color:#b91c1c;padding:10px 12px;border-radius:10px;
+    font-size:13.5px;margin-top:14px;text-align:center}
+  @media (prefers-color-scheme: dark){.erro{background:#7f1d1d;color:#fecaca}}
+
+  /* ============ APP ============ */
+  .hdr{
+    position:sticky;top:0;z-index:50;
+    background:color-mix(in srgb, var(--bg-2) 85%, transparent);
+    backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--borda);
+    padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;letter-spacing:-.3px}
+  .brand-icon{width:30px;height:30px;border-radius:8px;
+    background:linear-gradient(135deg,var(--prim),var(--acen));
+    display:grid;place-items:center;color:#fff;font-size:15px}
+  .user-chip{
+    display:flex;align-items:center;gap:8px;
+    background:var(--bg-3);border:1px solid var(--borda);
+    border-radius:999px;padding:5px 5px 5px 12px;font-size:12.5px;font-weight:600;
+  }
+  .user-chip .avatar{
+    width:26px;height:26px;border-radius:50%;
+    background:linear-gradient(135deg,var(--prim),var(--acen));color:#fff;
+    display:grid;place-items:center;font-size:12px;font-weight:800;
+  }
+  .user-chip button{padding:4px 10px;border-radius:999px;background:var(--err);color:#fff;font-size:11.5px;font-weight:700}
+
+  /* Container */
+  .wrap{max-width:780px;margin:0 auto;padding:18px 16px 80px}
+
+  /* Tabs bottom */
+  .tabs{
+    position:fixed;bottom:0;left:0;right:0;z-index:40;
+    background:color-mix(in srgb, var(--bg-2) 92%, transparent);
+    backdrop-filter:blur(12px);
+    border-top:1px solid var(--borda);
+    display:grid;grid-template-columns:repeat(5,1fr);
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+    max-width:780px;margin:0 auto;
+  }
+  .tab{
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:6px 4px;border-radius:10px;color:var(--txt-3);
+    font-size:10.5px;font-weight:600;transition:color .15s;
+  }
+  .tab .ico{font-size:20px;line-height:1}
+  .tab.ativo{color:var(--prim)}
+  .tab.ativo .ico{transform:scale(1.08)}
+
+  /* Section */
+  .sec{margin-bottom:22px}
+  .sec-title{
+    font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;
+    color:var(--txt-3);margin:0 0 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  }
+  .sec-title .badge{
+    font-size:11px;background:var(--prim-cla);color:var(--prim-esc);
+    padding:3px 9px;border-radius:999px;letter-spacing:0;
+  }
+
+  /* Cards */
+  .card{
+    background:var(--bg-2);border:1px solid var(--borda);border-radius:var(--r);
+    padding:16px;margin-bottom:10px;box-shadow:var(--sombra);
+  }
+  .card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .card-title{margin:0;font-size:15.5px;font-weight:700;letter-spacing:-.2px}
+  .card-sub{font-size:12.5px;color:var(--txt-3);margin-top:3px}
+  .card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+
+  /* Botões */
+  .btn{
+    padding:9px 14px;border-radius:10px;font-size:13.5px;font-weight:600;
+    background:var(--prim);color:#fff;transition:transform .1s;white-space:nowrap;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn-ghost{background:var(--bg-3);color:var(--txt);border:1px solid var(--borda)}
+  .btn-danger{background:transparent;color:var(--err);border:1px solid color-mix(in srgb,var(--err) 30%,var(--borda))}
+  .btn-danger:active{background:color-mix(in srgb,var(--err) 10%,transparent)}
+  .btn-sm{padding:6px 10px;font-size:12.5px;border-radius:8px}
+  .btn-full{width:100%;padding:13px;font-size:14.5px}
+  .fab{
+    position:fixed;bottom:calc(78px + env(safe-area-inset-bottom));right:18px;z-index:45;
+    width:56px;height:56px;border-radius:18px;
+    background:linear-gradient(135deg,var(--prim),var(--prim-esc));color:#fff;
+    font-size:26px;font-weight:300;line-height:1;
+    box-shadow:0 8px 20px color-mix(in srgb,var(--prim) 45%, transparent);
+    display:grid;place-items:center;transition:transform .12s;
+  }
+  .fab:active{transform:scale(.92)}
+    /* Botão flutuante de tema */
+  .btn-tema{
+    position:fixed;
+    bottom:calc(90px + env(safe-area-inset-bottom));
+    left:18px;
+    z-index:80;
+    width:48px;height:48px;
+    border-radius:50%;
+    background:var(--bg-2);
+    color:var(--txt);
+    border:1px solid var(--borda);
+    box-shadow:var(--sombra-forte);
+    display:grid;place-items:center;
+    font-size:22px;line-height:1;
+    cursor:pointer;
+    transition:transform .15s, border-color .15s;
+  }
+  .btn-tema:active{transform:scale(.92)}
+  @media(hover:hover){ .btn-tema:hover{border-color:var(--prim)} }
+
+  /* Tags */
+  .tag{
+    font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;
+    background:var(--bg-3);color:var(--txt-2);display:inline-block;
+  }
+  .tag-prim{background:var(--prim-cla);color:var(--prim-esc)}
+  .tag-ok{background:#dcfce7;color:#166534}
+  .tag-warn{background:#fef3c7;color:#92400e}
+  .tag-err{background:#fee2e2;color:#b91c1c}
+  .tag-secreto{background:#1f2937;color:#fbbf24}
+  @media (prefers-color-scheme: dark){
+    .tag-ok{background:#14532d;color:#bbf7d0}
+    .tag-warn{background:#78350f;color:#fde68a}
+    .tag-err{background:#7f1d1d;color:#fecaca}
+    .tag-secreto{background:#78350f;color:#fbbf24}
+  }
+
+  /* Empty */
+  .empty{
+    text-align:center;padding:40px 20px;color:var(--txt-3);
+    background:var(--bg-2);border:1px dashed var(--borda);border-radius:var(--r);
+  }
+  .empty-icon{font-size:36px;margin-bottom:8px;opacity:.5}
+  .empty p{margin:0;font-size:13.5px}
+
+  /* ============ MODAL ============ */
+  .overlay{
+    position:fixed;inset:0;background:rgba(8,15,30,.65);backdrop-filter:blur(4px);
+    z-index:100;display:none;align-items:flex-end;justify-content:center;padding:0;
+  }
+  @media(min-width:640px){.overlay{align-items:center;padding:20px}}
+  .overlay.show{display:flex;animation:fade .18s}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .modal{
+    background:var(--bg-2);width:100%;max-width:640px;max-height:92vh;overflow-y:auto;
+    border-radius:20px 20px 0 0;animation:slideUp .22s cubic-bezier(.2,.9,.3,1);
+  }
+  @media(min-width:640px){.modal{border-radius:20px}}
+  @keyframes slideUp{from{transform:translateY(30px)}to{transform:translateY(0)}}
+  .modal-head{
+    position:sticky;top:0;z-index:2;
+    background:var(--bg-2);padding:18px 20px 14px;
+    border-bottom:1px solid var(--borda);
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+  }
+  .modal-head h2{margin:0;font-size:17px;letter-spacing:-.3px}
+  .modal-x{
+    width:32px;height:32px;border-radius:50%;background:var(--bg-3);
+    display:grid;place-items:center;font-size:18px;color:var(--txt-2);
+  }
+  .modal-body{padding:20px}
+  .modal-actions{display:flex;gap:8px;margin-top:22px}
+  .modal-actions .btn{flex:1;padding:13px}
+
+  /* Fieldsets */
+  .fieldset{border:1px solid var(--borda);border-radius:var(--r-sm);padding:14px;margin-top:16px}
+  .fieldset-head{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;font-weight:700;color:var(--txt-2)}
+  .pos-row{display:grid;grid-template-columns:1fr 90px 34px;gap:8px;margin-top:8px;align-items:center}
+  .pos-row input{margin-top:0}
+  .pos-row .x{
+    width:34px;height:34px;border-radius:8px;background:transparent;
+    color:var(--err);border:1px solid color-mix(in srgb,var(--err) 25%,var(--borda));
+    display:grid;place-items:center;font-size:16px;
+  }
+  .checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+  .check{
+    display:flex;align-items:center;gap:8px;
+    background:var(--bg-3);border:1px solid var(--borda);border-radius:10px;
+    padding:10px 12px;font-size:13.5px;font-weight:500;cursor:pointer;margin:0;
+  }
+  .check input{width:18px;height:18px;margin:0;accent-color:var(--prim)}
+  .check.marcado{border-color:var(--prim);background:var(--prim-cla)}
+
+  /* Toggle */
+  .toggle{
+    display:flex;align-items:center;gap:10px;margin-top:14px;
+    padding:12px;background:var(--bg-3);border:1px solid var(--borda);border-radius:10px;
+    cursor:pointer;font-size:13.5px;font-weight:600;
+  }
+  .toggle input{width:auto;margin:0;accent-color:var(--prim);transform:scale(1.3);order:-1}
+  .toggle small{display:block;font-weight:400;color:var(--txt-3);font-size:11.5px;margin-top:2px}
+
+  /* Chaves (mata-mata) */
+  .fase-tag{
+    display:inline-block;background:var(--prim-cla);color:var(--prim-esc);
+    font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;
+    margin-top:14px;margin-bottom:6px;
+  }
+  .matchup{
+    display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;
+    margin-top:6px;padding:8px;border:1px solid var(--borda);border-radius:10px;background:var(--bg-3);
+  }
+  .matchup-x{font-weight:700;color:var(--txt-3);padding:0 2px;font-size:12px}
+  .time-btn{
+    padding:10px 8px;border:2px solid var(--borda);border-radius:8px;
+    background:var(--bg-2);font-size:13px;font-weight:600;
+    text-align:center;transition:.15s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .time-btn.venc{background:var(--prim);color:#fff;border-color:var(--prim-esc)}
+  .time-btn.vazio{color:var(--txt-3);font-style:italic;font-weight:400}
+  .time-btn:disabled{cursor:not-allowed;opacity:.85}
+
+  /* Auditoria */
+  .audit-row{
+    padding:12px 14px;border-bottom:1px solid var(--borda);
+    display:flex;flex-direction:column;gap:4px;
+  }
+  .audit-row:last-child{border-bottom:none}
+  .audit-row .top{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+  .audit-row .nome{font-weight:700;font-size:13.5px}
+  .audit-row .quando{font-size:11.5px;color:var(--txt-3)}
+  .audit-row .detalhe{font-size:12.5px;color:var(--txt-2);line-height:1.5}
+  .audit-row code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--bg-3);padding:2px 6px;border-radius:6px}
+
+  /* Toast */
+    /* Toast — sempre escuro e acima da barra de abas */
+    /* Toast — usa opacity + visibility para esconder completamente */
+  .toast{
+    position:fixed;
+    bottom:calc(96px + env(safe-area-inset-bottom));
+    left:50%;
+    transform:translateX(-50%) translateY(20px);
+    background:#1e293b;
+    color:#f1f5f9;
+    padding:12px 20px;
+    border-radius:12px;
+    font-size:13.5px;
+    font-weight:600;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);
+    z-index:300;
+    transition:opacity .25s ease, transform .25s ease, visibility 0s linear .25s;
+    max-width:90%;
+    text-align:center;
+    border:1px solid rgba(255,255,255,.1);
+    opacity:0;
+    visibility:hidden;
+    pointer-events:none;
+  }
+  .toast.show{
+    opacity:1;
+    visibility:visible;
+    transform:translateX(-50%) translateY(0);
+    transition:opacity .25s ease, transform .25s ease, visibility 0s linear 0s;
+  }
+  .toast.err{
+    background:#dc2626;
+    color:#fff;
+    border-color:rgba(255,255,255,.15);
+  }
+
+  /* Filtros */
+  .filtros{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+  @media(min-width:520px){.filtros{grid-template-columns:1fr 1fr 1fr 1fr}}
+  .filtros input,.filtros select{margin-top:0;font-size:13px;padding:9px}
+
+  /* Grid de estatísticas */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+  @media(min-width:520px){.stats{grid-template-columns:repeat(4,1fr)}}
+  .stat{
+    background:var(--bg-2);border:1px solid var(--borda);border-radius:var(--r-sm);
+    padding:14px;box-shadow:var(--sombra);
+  }
+  .stat .rotulo{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt-3);font-weight:700}
+  .stat .valor{font-size:22px;font-weight:800;margin-top:4px;letter-spacing:-.5px}
+
+  /* Classificação */
+  .rank-list{display:flex;flex-direction:column;gap:8px}
+  .rank-item{
+    display:flex;align-items:center;gap:12px;
+    background:var(--bg-2);border:1px solid var(--borda);border-radius:var(--r-sm);
+    padding:12px 14px;
+  }
+  .rank-num{
+    width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    font-weight:800;font-size:13.5px;background:var(--bg-3);color:var(--txt-2);flex-shrink:0;
+  }
+  .rank-item:nth-child(1) .rank-num{background:#fef3c7;color:#92400e}
+  .rank-item:nth-child(2) .rank-num{background:#e2e8f0;color:#475569}
+  .rank-item:nth-child(3) .rank-num{background:#fed7aa;color:#9a3412}
+  .rank-info{flex:1;min-width:0}
+  .rank-nome{font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rank-meta{font-size:11.5px;color:var(--txt-3);margin-top:2px}
+  .rank-pts{font-weight:800;font-size:18px;color:var(--prim);letter-spacing:-.3px}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="telaLogin" class="login-wrap">
+  <form class="login-card" id="formLogin">
+    <div class="login-logo">⚡</div>
+    <h1>CompAct Jr.</h1>
+    <p class="sub">Painel de organização</p>
+    <label>Usuário
+      <input name="usuario" autocomplete="username" required placeholder="seu usuário" />
+    </label>
+    <label>Senha
+      <input type="password" name="senha" autocomplete="current-password" required placeholder="••••••" />
+    </label>
+    <button class="btn-primario" type="submit" id="btnEntrar">Entrar</button>
+    <p class="erro" id="loginErro" hidden></p>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="app" hidden>
+  <header class="hdr">
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      CompAct Jr.
+    </div>
+    <div class="user-chip">
+      <div class="avatar" id="avatarUser">?</div>
+      <span id="nomeUser">—</span>
+      <button id="btnSair">Sair</button>
+    </div>
+  </header>
+
+  <main class="wrap" id="conteudo"></main>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab ativo" data-sec="home"><span class="ico">🏠</span>Início</button>
+    <button class="tab" data-sec="equipes"><span class="ico">👥</span>Equipes</button>
+    <button class="tab" data-sec="jogos"><span class="ico">🎮</span>Jogos</button>
+    <button class="tab" data-sec="competicoes"><span class="ico">🏆</span>Mata-Mata</button>
+    <button class="tab" data-sec="mais"><span class="ico">⋯</span>Mais</button>
+  </nav>
+</div>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="modalTitle"></h2>
+      <button class="modal-x" id="modalClose">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+<!-- Botão de alternar tema -->
+<button class="btn-tema" id="btnTema" onclick="alternarTema()" title="Alternar tema">🌙</button>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   UTILITÁRIOS
+   ============================================================ */
+/* ============================================================
+   TEMA CLARO / ESCURO
+   ============================================================ */
+function temaEfetivo() {
+  const attr = document.documentElement.getAttribute('data-tema');
+  if (attr === 'dark' || attr === 'light') return attr;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function atualizarIconeTema() {
+  const btn = document.getElementById('btnTema');
+  if (!btn) return;
+  const efetivo = temaEfetivo();
+  btn.textContent = efetivo === 'dark' ? '☀️' : '🌙';
+  btn.title = efetivo === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro';
+}
+
+window.alternarTema = function() {
+  const novo = temaEfetivo() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-tema', novo);
+  localStorage.setItem('cj_tema', novo);
+  atualizarIconeTema();
+};
+
+(function initTema() {
+  const salvo = localStorage.getItem('cj_tema');
+  if (salvo === 'dark' || salvo === 'light') {
+    document.documentElement.setAttribute('data-tema', salvo);
+  }
+  // Atualiza quando o SO muda (se não houver override)
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!document.documentElement.getAttribute('data-tema')) atualizarIconeTema();
+  });
+  atualizarIconeTema();
+})();
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+  { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
+));
+const gerarId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const fmtData = iso => {
+  if (!iso) return '';
+  let str = String(iso);
+  // SQLite retorna "YYYY-MM-DD HH:MM:SS" em UTC (sem 'T', sem 'Z')
+  // A gente converte para ISO 8601 para o JS interpretar como UTC
+  if (!str.includes('T')) {
+    str = str.replace(' ', 'T') + 'Z';
+  }
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit'
+  });
+};
+
+let toastTimer;
+function toast(msg, err = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.toggle('err', err);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+/* ============================================================
+   ESTADO
+   ============================================================ */
+const state = {
+  token: localStorage.getItem('cj_token') || null,
+  usuario: JSON.parse(localStorage.getItem('cj_user') || 'null'),
+  secao: 'home',
+  // Caches
+  equipes: [],
+  jogos: [],
+  competicoes: [],
+  penalidades: [],
+  usuarios: [],
+  orgs: [],
+  auditoria: [],
+  classificacao: []
+};
+
+/* ============================================================
+   API
+   ============================================================ */
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (state.token) opts.headers.Authorization = 'Bearer ' + state.token;
+  if (body !== undefined) opts.body = JSON.stringify(body);
+
+  const r = await fetch('/api' + path, opts);
+  if (r.status === 401) { logout(); throw new Error('Sessão expirada'); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.erro || 'Erro na requisição');
+  return data;
+}
+
+const isAdmin = () => state.usuario?.papel === 'admin_geral';
+const isResp  = () => state.usuario?.papel === 'responsavel';
+const podeExcluir = () => isAdmin() || isResp();
+
+async function carregarDados() {
+  // Admin geral: só carrega orgs e usuários
+  if (isAdmin()) {
+    const [orgs, usuarios] = await Promise.all([
+      api('GET', '/orgs'),
+      api('GET', '/usuarios')
+    ]);
+    state.orgs = orgs;
+    state.usuarios = usuarios;
+    return;
+  }
+
+  // Responsável / organizador: carrega dados da própria org
+  const [equipes, jogos, competicoes, penalidades, classificacao] = await Promise.all([
+    api('GET', '/equipes'),
+    api('GET', '/jogos'),
+    api('GET', '/competicoes'),
+    api('GET', '/penalidades'),
+    api('GET', '/classificacao')
+  ]);
+  state.equipes = equipes;
+  state.jogos = jogos;
+  state.competicoes = competicoes;
+  state.penalidades = penalidades;
+  state.classificacao = classificacao;
+
+  if (isResp()) {
+    const [usuarios, auditoria] = await Promise.all([
+      api('GET', '/usuarios'),
+      api('GET', '/auditoria')
+    ]);
+    state.usuarios = usuarios;
+    state.auditoria = auditoria;
+  }
+}
+
+/* ============================================================
+   LOGIN / LOGOUT
+   ============================================================ */
+$('#formLogin').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const btn = $('#btnEntrar');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario: String(fd.get('usuario') || '').trim(),
+        senha: String(fd.get('senha') || '')
+      })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.erro || 'Erro ao entrar');
+
+    state.token = data.token;
+    state.usuario = data.usuario;
+    localStorage.setItem('cj_token', data.token);
+    localStorage.setItem('cj_user', JSON.stringify(data.usuario));
+    $('#loginErro').hidden = true;
+    await iniciarApp();
+  } catch (e) {
+    const el = $('#loginErro');
+    el.textContent = e.message;
+    el.hidden = false;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Entrar';
+  }
+});
+
+$('#btnSair').addEventListener('click', logout);
+
+function logout() {
+  state.token = null;
+  state.usuario = null;
+  localStorage.removeItem('cj_token');
+  localStorage.removeItem('cj_user');
+  $('#app').hidden = true;
+  $('#telaLogin').style.display = 'grid';
+  $('#formLogin').reset();
+}
+
+async function iniciarApp() {
+  $('#telaLogin').style.display = 'none';
+  $('#app').hidden = false;
+  const nome = state.usuario?.nome || state.usuario?.usuario || '?';
+  $('#nomeUser').textContent = nome.split(' ')[0];
+  $('#avatarUser').textContent = nome[0]?.toUpperCase() || '?';
+
+  // Ajusta abas conforme papel
+  ajustarTabs();
+  await carregarDados();
+  render();
+}
+
+function ajustarTabs() {
+  const tabs = $('#tabs');
+  if (isAdmin()) {
+    tabs.innerHTML = `
+      <button class="tab ativo" data-sec="home"><span class="ico">🏠</span>Início</button>
+      <button class="tab" data-sec="mais"><span class="ico">⋯</span>Mais</button>
+    `;
+    tabs.style.gridTemplateColumns = 'repeat(2,1fr)';
+  } else {
+    tabs.innerHTML = `
+      <button class="tab ativo" data-sec="home"><span class="ico">🏠</span>Início</button>
+      <button class="tab" data-sec="equipes"><span class="ico">👥</span>Equipes</button>
+      <button class="tab" data-sec="jogos"><span class="ico">🎮</span>Jogos</button>
+      <button class="tab" data-sec="competicoes"><span class="ico">🏆</span>Mata-Mata</button>
+      <button class="tab" data-sec="mais"><span class="ico">⋯</span>Mais</button>
+    `;
+    tabs.style.gridTemplateColumns = 'repeat(5,1fr)';
+  }
+}
+
+/* ============================================================
+   NAVEGAÇÃO
+   ============================================================ */
+$('#tabs').addEventListener('click', ev => {
+  const t = ev.target.closest('.tab');
+  if (!t) return;
+  state.secao = t.dataset.sec;
+  $$('.tab').forEach(x => x.classList.toggle('ativo', x.dataset.sec === state.secao));
+  render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+const overlay = $('#overlay');
+function openModal(titulo, html) {
+  $('#modalTitle').textContent = titulo;
+  const body = $('#modalBody');
+  body.innerHTML = html;
+  overlay.classList.add('show');
+  return body;
+}
+function closeModal() {
+  overlay.classList.remove('show');
+  $('#modalBody').innerHTML = '';
+}
+$('#modalClose').addEventListener('click', closeModal);
+// Só fecha o modal se o clique COMEÇOU e TERMINOU fora do modal
+let overlayMousedownAlvo = null;
+overlay.addEventListener('mousedown', e => {
+  overlayMousedownAlvo = e.target;
+});
+overlay.addEventListener('mouseup', e => {
+  if (overlayMousedownAlvo === overlay && e.target === overlay) {
+    closeModal();
+  }
+  overlayMousedownAlvo = null;
+});
+// Suporte a toque (mobile): mesma lógica
+let overlayTouchAlvo = null;
+overlay.addEventListener('touchstart', e => {
+  overlayTouchAlvo = e.target;
+}, { passive: true });
+overlay.addEventListener('touchend', e => {
+  // No touchend, e.target pode ser o elemento original do touchstart
+  if (overlayTouchAlvo === overlay) {
+    closeModal();
+  }
+  overlayTouchAlvo = null;
+});document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render() {
+  const el = $('#conteudo');
+  switch (state.secao) {
+    case 'home': return renderHome(el);
+    case 'equipes': return renderEquipes(el);
+    case 'jogos': return renderJogos(el);
+    case 'competicoes': return renderCompeticoes(el);
+    case 'mais': return renderMais(el);
+  }
+}
+
+/* ---------- HOME ---------- */
+function renderHome(el) {
+  // ============ HOME DO ADMIN GERAL ============
+  if (isAdmin()) {
+    const nome = state.usuario.nome.split(' ')[0];
+    el.innerHTML = `
+      <div style="margin-bottom:24px">
+        <h1 style="margin:0 0 4px;font-size:22px;letter-spacing:-.5px">Olá, ${esc(nome)} 👋</h1>
+        <p style="margin:0;color:var(--txt-2);font-size:13.5px">
+          CompAct Jr. · <span class="tag tag-prim">Admin geral</span>
+        </p>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">⚙️ Gerenciamento</div>
+
+        <div class="card" style="padding:0;margin-bottom:10px">
+          <button onclick="abrirOrgs()" style="width:100%;padding:18px;display:flex;align-items:center;gap:16px;text-align:left">
+            <span style="font-size:26px">🏢</span>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:15.5px">Organizações</div>
+              <div style="font-size:12.5px;color:var(--txt-3);margin-top:2px">
+                ${state.orgs.length} cadastrada${state.orgs.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <span style="color:var(--txt-3);font-size:20px">›</span>
+          </button>
+        </div>
+
+        <div class="card" style="padding:0">
+          <button onclick="abrirUsuarios()" style="width:100%;padding:18px;display:flex;align-items:center;gap:16px;text-align:left">
+            <span style="font-size:26px">👤</span>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:15.5px">Usuários</div>
+              <div style="font-size:12.5px;color:var(--txt-3);margin-top:2px">
+                ${state.usuarios.length} cadastrado${state.usuarios.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <span style="color:var(--txt-3);font-size:20px">›</span>
+          </button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // ============ HOME DO RESPONSÁVEL / ORGANIZADOR ============
+  const orgNome = state.usuario.orgNome || 'Minha organização';
+  const totalPen = state.penalidades.reduce((s, p) => s + (Number(p.pontos) || 0), 0);
+
+  el.innerHTML = `
+    <div style="margin-bottom:20px">
+      <h1 style="margin:0 0 4px;font-size:22px;letter-spacing:-.5px">Olá, ${esc(state.usuario.nome.split(' ')[0])} 👋</h1>
+      <p style="margin:0;color:var(--txt-2);font-size:13.5px">
+        ${esc(orgNome)} · ${state.usuario.papel === 'responsavel'
+          ? '<span class="tag tag-ok">Responsável</span>'
+          : '<span class="tag">Organizador</span>'}
+      </p>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="rotulo">Equipes</div><div class="valor">${state.equipes.length}</div></div>
+      <div class="stat"><div class="rotulo">Jogos</div><div class="valor">${state.jogos.length}</div></div>
+      <div class="stat"><div class="rotulo">Competições</div><div class="valor">${state.competicoes.length}</div></div>
+      <div class="stat"><div class="rotulo">Penalidades</div><div class="valor">−${totalPen}</div></div>
+    </div>
+
+        <div class="sec">
+      <div class="sec-title">
+        <span>🏅 Classificação</span>
+        ${state.classificacao.length ? `
+          <span style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="exportarCSV()" title="Exportar CSV">📄 CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportarPDF()" title="Exportar PDF">🖨️ PDF</button>
+          </span>
+        ` : ''}
+      </div>
+      ${state.classificacao.length ? `
+        <div class="rank-list">
+          ${state.classificacao.slice(0, 5).map((c, i) => `
+            <div class="rank-item">
+              <div class="rank-num">${i + 1}º</div>
+              <div class="rank-info">
+                <div class="rank-nome">${esc(c.equipe.nome)}</div>
+                <div class="rank-meta">
+                  ${c.jogos} jogo${c.jogos === 1 ? '' : 's'}
+                  ${c.penal ? ` · −${c.penal} pts` : ''}
+                </div>
+              </div>
+              <div class="rank-pts">${c.total}</div>
+            </div>
+          `).join('')}
+        </div>
+            ` : '<div class="empty"><div class="empty-icon">📊</div><p>Nenhuma pontuação ainda</p></div>'}
+    </div>
+  `;
+}
+
+/* ---------- EQUIPES ---------- */
+function renderEquipes(el) {
+  el.innerHTML = `
+    <div class="sec-title">👥 Equipes <span class="badge">${state.equipes.length}</span></div>
+    ${state.equipes.length ? state.equipes.map(e => `
+      <div class="card">
+        <div class="card-head">
+          <div style="flex:1;min-width:0">
+            <h3 class="card-title">${esc(e.nome)}</h3>
+            <div class="card-sub">${esc(e.responsavel || 'Sem responsável')}</div>
+          </div>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm" onclick="editarEquipe('${e.id}')">Editar</button>
+          ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirEquipe('${e.id}')">Excluir</button>` : ''}
+        </div>
+      </div>
+    `).join('') : '<div class="empty"><div class="empty-icon">👥</div><p>Nenhuma equipe cadastrada</p></div>'}
+  `;
+
+  const fab = document.createElement('button');
+  fab.className = 'fab';
+  fab.textContent = '+';
+  fab.onclick = () => editarEquipe(null);
+  el.appendChild(fab);
+}
+
+/* ---------- JOGOS ---------- */
+function renderJogos(el) {
+  if (!state.jogosExpandidos) state.jogosExpandidos = new Set();
+
+  el.innerHTML = `
+    <div class="sec-title">🎮 Jogos <span class="badge">${state.jogos.length}</span></div>
+    ${state.jogos.length ? state.jogos.map(j => {
+      const posicoes = j.posicoes || [];
+      const resultados = j.resultados || {};
+      const expandido = state.jogosExpandidos.has(j.id);
+
+      const preenchidas = posicoes
+        .map(p => {
+          const equipeId = Object.keys(resultados).find(eid => resultados[eid] === p.id);
+          const eq = equipeId ? state.equipes.find(e => e.id === equipeId) : null;
+          return eq ? { posicao: p, equipe: eq } : null;
+        })
+        .filter(Boolean);
+
+      return `
+        <div class="card">
+          <div class="card-head" style="cursor:pointer;margin-bottom:0" onclick="toggleJogo('${j.id}')">
+            <div style="flex:1;min-width:0">
+              <h3 class="card-title">
+                ${esc(j.nome)}
+                ${j.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
+              </h3>
+              <div class="card-sub">
+                ${posicoes.map(p => p.nome + '=' + p.pontos).join(' · ') || 'Sem posições'}
+              </div>
+              ${j.editado_por ? `<div class="card-sub" style="margin-top:4px;font-style:italic">Última edição por ${esc(j.editado_por)}</div>` : ''}
+            </div>
+            <span style="font-size:22px;color:var(--txt-3);line-height:1;transition:transform .2s;flex-shrink:0;${expandido ? 'transform:rotate(90deg)' : ''}">›</span>
+          </div>
+
+          ${expandido ? `
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--borda);display:flex;flex-direction:column;gap:6px">
+              ${preenchidas.length ? preenchidas.map(({ posicao, equipe }) => `
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
+                  <span style="color:var(--txt-3);font-weight:600">${esc(posicao.nome)}</span>
+                  <span style="font-weight:700">${esc(equipe.nome)}</span>
+                </div>
+              `).join('') : '<p style="color:var(--txt-3);font-size:13px;margin:0">Sem resultados lançados.</p>'}
+            </div>
+          ` : ''}
+
+          <div class="card-actions" style="margin-top:14px">
+            <button class="btn btn-sm" onclick="abrirResultados('${j.id}')">Resultados</button>
+            <button class="btn btn-ghost btn-sm" onclick="editarJogo('${j.id}')">Editar</button>
+            ${podeExcluir() && j.secreto ? `<button class="btn btn-ghost btn-sm" onclick="revelarJogo('${j.id}')">🔓 Revelar</button>` : ''}
+            ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirJogo('${j.id}')">Excluir</button>` : ''}
+          </div>
+        </div>`;
+    }).join('') : '<div class="empty"><div class="empty-icon">🎮</div><p>Nenhum jogo cadastrado</p></div>'}
+  `;
+
+  const fab = document.createElement('button');
+  fab.className = 'fab';
+  fab.textContent = '+';
+  fab.onclick = () => editarJogo(null);
+  el.appendChild(fab);
+}
+
+/* ---------- COMPETIÇÕES (Mata-Mata) ---------- */
+function renderCompeticoes(el) {
+  if (!state.competicoesExpandidas) state.competicoesExpandidas = new Set();
+
+  el.innerHTML = `
+    <div class="sec-title">🏆 Competições Mata-Mata <span class="badge">${state.competicoes.length}</span></div>
+    ${state.competicoes.length ? state.competicoes.map(c => {
+      const podio = calcularPodio(c);
+      const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
+      const expandido = state.competicoesExpandidas.has(c.id);
+      const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
+
+      return `
+        <div class="card">
+          <div class="card-head" style="cursor:pointer;margin-bottom:0" onclick="toggleCompeticao('${c.id}')">
+            <div style="flex:1;min-width:0">
+              <h3 class="card-title">
+                ${esc(c.nome)}
+                ${c.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
+                ${finalizada ? '<span class="tag tag-ok" style="margin-left:6px">Finalizado</span>' : ''}
+              </h3>
+              <div class="card-sub">${(c.equipes || []).length} equipes · ${(c.partidas || []).length} confrontos</div>
+              <div class="card-sub" style="margin-top:4px">🥇 ${c.pontos1} · 🥈 ${c.pontos2} · 🥉 ${c.pontos3}</div>
+              ${c.editado_por ? `<div class="card-sub" style="margin-top:6px;font-style:italic">Última edição por ${esc(c.editado_por)}</div>` : ''}
+            </div>
+            <span style="font-size:22px;color:var(--txt-3);line-height:1;transition:transform .2s;flex-shrink:0;${expandido ? 'transform:rotate(90deg)' : ''}">›</span>
+          </div>
+
+          ${expandido ? `
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--borda);display:flex;flex-direction:column;gap:6px">
+              ${temResultado ? `
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
+                  <span style="color:#b8860b;font-weight:700">🥇 1º lugar</span>
+                  <span style="font-weight:700">${esc(podio.primeiro)}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
+                  <span style="color:#546e7a;font-weight:700">🥈 2º lugar</span>
+                  <span style="font-weight:700">${esc(podio.segundo)}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
+                  <span style="color:#bf360c;font-weight:700">🥉 3º lugar</span>
+                  <span style="font-weight:700">${esc(podio.terceiro)}</span>
+                </div>
+              ` : '<p style="color:var(--txt-3);font-size:13px;margin:0">Sem resultados lançados.</p>'}
+            </div>
+          ` : ''}
+
+          <div class="card-actions" style="margin-top:14px">
+            <button class="btn btn-sm" onclick="abrirChaves('${c.id}')">Ver chaves</button>
+            <button class="btn btn-ghost btn-sm" onclick="editarCompeticao('${c.id}')">Editar</button>
+            ${podeExcluir() && c.secreto ? `<button class="btn btn-ghost btn-sm" onclick="revelarCompeticao('${c.id}')">🔓 Revelar</button>` : ''}
+            ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirCompeticao('${c.id}')">Excluir</button>` : ''}
+          </div>
+        </div>`;
+    }).join('') : '<div class="empty"><div class="empty-icon">🏆</div><p>Nenhuma competição criada</p></div>'}
+  `;
+
+  const fab = document.createElement('button');
+  fab.className = 'fab';
+  fab.textContent = '+';
+  fab.onclick = () => editarCompeticao(null);
+  el.appendChild(fab);
+}
+
+/* ---------- MAIS ---------- */
+function renderMais(el) {
+  // ============ MAIS DO ADMIN GERAL ============
+  if (isAdmin()) {
+    el.innerHTML = `
+      <div class="sec-title">⚙️ Administração</div>
+
+      <div class="card" style="padding:0">
+        <button onclick="abrirOrgs()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+          <span style="font-size:22px">🏢</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">Organizações</div>
+            <div style="font-size:12px;color:var(--txt-3)">${state.orgs.length} cadastrada${state.orgs.length === 1 ? '' : 's'}</div>
+          </div>
+          <span style="color:var(--txt-3)">›</span>
+        </button>
+      </div>
+
+      <div class="card" style="padding:0">
+        <button onclick="abrirUsuarios()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+          <span style="font-size:22px">👤</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">Usuários</div>
+            <div style="font-size:12px;color:var(--txt-3)">${state.usuarios.length} cadastrado${state.usuarios.length === 1 ? '' : 's'}</div>
+          </div>
+          <span style="color:var(--txt-3)">›</span>
+        </button>
+      </div>
+
+      <div class="card" style="padding:0">
+        <button onclick="abrirTrocarSenha()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+          <span style="font-size:22px">🔑</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">Trocar minha senha</div>
+            <div style="font-size:12px;color:var(--txt-3)">Alterar a senha de acesso</div>
+          </div>
+          <span style="color:var(--txt-3)">›</span>
+        </button>
+      </div>
+
+      <div class="card" style="padding:0;margin-top:20px">
+        <button onclick="logout()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left;color:var(--err)">
+          <span style="font-size:22px">🚪</span>
+          <div style="flex:1;font-weight:700;font-size:14.5px">Sair</div>
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  // ============ MAIS DO RESPONSÁVEL / ORGANIZADOR ============
+  el.innerHTML = `
+    <div class="sec-title">⚙️ Gerenciamento</div>
+
+    ${isResp() ? `
+      <div class="card" style="padding:0">
+        <button onclick="abrirUsuarios()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+          <span style="font-size:22px">👤</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">Usuários</div>
+            <div style="font-size:12px;color:var(--txt-3)">${state.usuarios.length} cadastrado${state.usuarios.length === 1 ? '' : 's'}</div>
+          </div>
+          <span style="color:var(--txt-3)">›</span>
+        </button>
+      </div>
+    ` : ''}
+
+    <div class="card" style="padding:0">
+      <button onclick="abrirPenalidades()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+        <span style="font-size:22px">⚖️</span>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14.5px">Penalidades</div>
+          <div style="font-size:12px;color:var(--txt-3)">${state.penalidades.length} registrada${state.penalidades.length === 1 ? '' : 's'}</div>
+        </div>
+        <span style="color:var(--txt-3)">›</span>
+      </button>
+    </div>
+
+    ${isResp() ? `
+      <div class="card" style="padding:0">
+        <button onclick="abrirAuditoria()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+          <span style="font-size:22px">📋</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">Auditoria</div>
+            <div style="font-size:12px;color:var(--txt-3)">Histórico de alterações de placar</div>
+          </div>
+          <span style="color:var(--txt-3)">›</span>
+        </button>
+      </div>
+    ` : ''}
+
+    ${isResp() ? `
+      <div class="card" style="padding:0;margin-top:20px">
+        <button onclick="revelarTodosJogos()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left;color:var(--warn)">
+          <span style="font-size:22px">🔓</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">Revelar todos os jogos</div>
+            <div style="font-size:12px;color:var(--txt-3)">Torna públicos todos os jogos secretos</div>
+          </div>
+        </button>
+      </div>
+    ` : ''}
+
+    <div class="card" style="padding:0">
+      <button onclick="abrirTrocarSenha()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left">
+        <span style="font-size:22px">🔑</span>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14.5px">Trocar minha senha</div>
+          <div style="font-size:12px;color:var(--txt-3)">Alterar a senha de acesso</div>
+        </div>
+        <span style="color:var(--txt-3)">›</span>
+      </button>
+    </div>
+
+    <div class="card" style="padding:0;margin-top:20px">
+      <button onclick="logout()" style="width:100%;padding:16px;display:flex;align-items:center;gap:14px;text-align:left;color:var(--err)">
+        <span style="font-size:22px">🚪</span>
+        <div style="flex:1;font-weight:700;font-size:14.5px">Sair</div>
+      </button>
+    </div>
+  `;
+}
+
+window.toggleJogo = function(id) {
+  if (!state.jogosExpandidos) state.jogosExpandidos = new Set();
+  if (state.jogosExpandidos.has(id)) {
+    state.jogosExpandidos.delete(id);
+  } else {
+    state.jogosExpandidos.add(id);
+  }
+  render();
+};
+
+window.toggleCompeticao = function(id) {
+  if (!state.competicoesExpandidas) state.competicoesExpandidas = new Set();
+  if (state.competicoesExpandidas.has(id)) {
+    state.competicoesExpandidas.delete(id);
+  } else {
+    state.competicoesExpandidas.add(id);
+  }
+  render();
+};
+
+/* ============================================================
+   CÁLCULO DE PÓDIO
+   ============================================================ */
+function calcularPodio(c) {
+  const partidas = c.partidas || [];
+  const nome = id => {
+    const eq = state.equipes.find(e => e.id === id);
+    return eq ? eq.nome : '—';
+  };
+
+  let primeiro = '—', segundo = '—', terceiro = '—';
+
+  // 3º lugar: pega direto quem tem isTerceiro=true
+  const terc = partidas.find(p => p.isTerceiro && !p.grupo && p.vencedor);
+  if (terc) terceiro = nome(terc.vencedor);
+
+  // Mata-mata (sem grupo, sem ser 3º lugar)
+  const matamata = partidas.filter(p => !p.grupo && !p.isTerceiro);
+
+  // A final é a partida do mata-mata com MAIOR rodada
+  if (matamata.length) {
+    let final = null;
+    matamata.forEach(p => {
+      if (!final || (Number(p.rodada) || 0) > (Number(final.rodada) || 0)) {
+        final = p;
+      }
+    });
+
+    if (final && final.vencedor && final.equipeA && final.equipeB) {
+      primeiro = nome(final.vencedor);
+      segundo = nome(final.vencedor === final.equipeA ? final.equipeB : final.equipeA);
+    }
+  }
+
+  return { primeiro, segundo, terceiro };
+}
+
+/* ============ EXPORTAR CLASSIFICAÇÃO ============ */
+window.exportarPDF = function() {
+  if (!state.classificacao.length) { toast('Sem dados para exportar', true); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const orgNome = state.usuario.orgNome || 'Classificação';
+  const dataHoje = new Date().toLocaleDateString('pt-BR');
+
+  // Cabeçalho
+  doc.setFontSize(20);
+  doc.setTextColor(67, 56, 202);
+  doc.setFont('helvetica', 'bold');
+  doc.text(orgNome, 14, 22);
+
+  doc.setFontSize(10);
+  doc.setTextColor(120, 120, 120);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Classificação geral · ' + dataHoje, 14, 29);
+
+  // Dados da tabela
+  const body = state.classificacao.map((c, i) => [
+    (i + 1) + 'º',
+    c.equipe.nome,
+    String(c.pontos),
+    c.penal ? '-' + c.penal : '0',
+    String(c.total)
+  ]);
+
+  // Renderiza a tabela
+  doc.autoTable({
+    startY: 36,
+    head: [['#', 'Equipe', 'Pontos', 'Penal.', 'Total']],
+    body: body,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [99, 102, 241],
+      textColor: 255,
+      fontStyle: 'bold',
+      fontSize: 11
+    },
+    bodyStyles: {
+      fontSize: 10,
+      cellPadding: 4
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
+    columnStyles: {
+      0: { cellWidth: 16, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 25, halign: 'right' },
+      3: { cellWidth: 25, halign: 'right' },
+      4: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }
+    },
+    didParseCell: function(data) {
+      // Destaca o pódio (1º, 2º, 3º) com cores de medalha
+      if (data.section === 'body') {
+        if (data.row.index === 0) data.cell.styles.fillColor = [254, 243, 199]; // ouro
+        else if (data.row.index === 1) data.cell.styles.fillColor = [241, 245, 249]; // prata
+        else if (data.row.index === 2) data.cell.styles.fillColor = [255, 237, 213]; // bronze
+      }
+      // Total negativo em vermelho
+      if (data.section === 'body' && data.column.index === 4) {
+        const total = Number(data.cell.raw);
+        if (total < 0) {
+          data.cell.styles.textColor = [239, 68, 68];
+        }
+      }
+      // Penalidade > 0 em vermelho
+      if (data.section === 'body' && data.column.index === 3) {
+        if (data.cell.raw !== '0') {
+          data.cell.styles.textColor = [239, 68, 68];
+        }
+      }
+    }
+  });
+
+  // Rodapé
+  const yFinal = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(9);
+  doc.setTextColor(150, 150, 150);
+  doc.setFont('helvetica', 'italic');
+  doc.text('CompAct Jr. — Gerenciador de Equipes', 105, yFinal, { align: 'center' });
+
+  // Salva o arquivo
+  const slug = orgNome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
+  doc.save('classificacao-' + slug + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
+
+  toast('PDF exportado!');
+};
+
+
+/* ============================================================
+   CRUD — EQUIPES
+   ============================================================ */
+window.editarEquipe = function(id) {
+  const eq = id ? state.equipes.find(e => e.id === id) : null;
+  const body = openModal(eq ? 'Editar equipe' : 'Nova equipe', `
+    <form id="fEq">
+      <label>Nome da equipe *
+        <input name="nome" required maxlength="60" value="${esc(eq?.nome || '')}" placeholder="Ex: Time Azul" autofocus />
+      </label>
+      <label>Responsável
+        <input name="responsavel" maxlength="60" value="${esc(eq?.responsavel || '')}" placeholder="Ex: João Silva" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Salvar</button>
+      </div>
+    </form>
+  `);
+  body.querySelector('#fEq').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const dados = {
+      nome: String(fd.get('nome')).trim(),
+      responsavel: String(fd.get('responsavel')).trim()
+    };
+    if (!dados.nome) return;
+    try {
+      if (eq) await api('PUT', '/equipes/' + eq.id, dados);
+      else await api('POST', '/equipes', dados);
+      closeModal();
+      await carregarDados(); render();
+      toast('Equipe salva!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+window.excluirEquipe = async function(id) {
+  const eq = state.equipes.find(e => e.id === id);
+  if (!eq || !confirm(`Excluir a equipe "${eq.nome}"?`)) return;
+  try {
+    await api('DELETE', '/equipes/' + id);
+    await carregarDados(); render();
+    toast('Equipe excluída');
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ============================================================
+   CRUD — JOGOS
+   ============================================================ */
+function posRowHTML(p) {
+  return `<div class="pos-row" data-id="${p.id || ''}">
+    <input class="pos-nome" placeholder="Ex: 1º lugar" value="${esc(p.nome || '')}" />
+    <input class="pos-pts" type="number" step="1" value="${p.pontos ?? 0}" />
+    <button type="button" class="x rm-pos">×</button>
+  </div>`;
+}
+
+window.editarJogo = function(id) {
+  const j = id ? state.jogos.find(x => x.id === id) : null;
+  const posicoes = j ? j.posicoes : [
+    { id: '', nome: '1º lugar', pontos: 10 },
+    { id: '', nome: '2º lugar', pontos: 7 },
+    { id: '', nome: '3º lugar', pontos: 5 }
+  ];
+
+  const body = openModal(j ? 'Editar jogo' : 'Novo jogo', `
+    <form id="fJogo">
+      <label>Nome do jogo *
+        <input name="nome" required maxlength="60" value="${esc(j?.nome || '')}" placeholder="Ex: Cabo de Guerra" autofocus />
+      </label>
+
+      <label class="toggle">
+        <input type="checkbox" name="secreto" ${j?.secreto ? 'checked' : ''} />
+        <div>
+          🔒 Jogo secreto
+          <small>Não aparece na tela pública até ser revelado</small>
+        </div>
+      </label>
+
+      <div class="fieldset">
+        <div class="fieldset-head">
+          <span>Posições e pontuação</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="addPos">+ adicionar</button>
+        </div>
+        <div id="listaPos">${posicoes.map(posRowHTML).join('')}</div>
+      </div>
+
+      <div class="fieldset">
+        <div class="fieldset-head">
+          <span>Equipes participantes</span>
+          ${state.equipes.length ? `
+            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--txt-2);cursor:pointer;margin:0">
+              <input type="checkbox" id="marcarTodas" style="width:16px;height:16px;margin:0;accent-color:var(--prim)" />
+              Marcar todas
+            </label>
+          ` : ''}
+        </div>
+        ${state.equipes.length ? `
+          <div class="checks">
+            ${state.equipes.map(e => `
+              <label class="check ${j && j.participantes.includes(e.id) ? 'marcado' : ''}">
+                <input type="checkbox" value="${e.id}" ${j && j.participantes.includes(e.id) ? 'checked' : ''} />
+                <span>${esc(e.nome)}</span>
+              </label>
+            `).join('')}
+          </div>
+        ` : '<p style="color:var(--txt-3);font-size:13px;margin:8px 0 0">Cadastre equipes primeiro</p>'}
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Salvar</button>
+      </div>
+    </form>
+  `);
+
+  const listaPos = body.querySelector('#listaPos');
+  body.querySelector('#addPos').onclick = () => {
+    listaPos.insertAdjacentHTML('beforeend', posRowHTML({ id: '', nome: '', pontos: 1 }));
+  };
+  listaPos.addEventListener('click', ev => {
+    if (ev.target.classList.contains('rm-pos')) ev.target.closest('.pos-row').remove();
+  });
+
+  // ==== Checkboxes de equipes ====
+  const checks = Array.from(body.querySelectorAll('.check input'));
+  const marcarTodas = body.querySelector('#marcarTodas');
+
+  // Atualiza a classe "marcado" ao mudar qualquer checkbox
+  checks.forEach(inp => {
+    inp.addEventListener('change', () => {
+      inp.closest('.check').classList.toggle('marcado', inp.checked);
+      // Se algum desmarcar, o "marcar todas" fica desmarcado
+      if (marcarTodas) {
+        marcarTodas.checked = checks.length > 0 && checks.every(c => c.checked);
+      }
+    });
+  });
+
+  // "Marcar todas": marca/desmarca todas de uma vez
+  if (marcarTodas) {
+    // Estado inicial: já marcado se todas estiverem marcadas
+    marcarTodas.checked = checks.length > 0 && checks.every(c => c.checked);
+
+    marcarTodas.addEventListener('change', () => {
+      const valor = marcarTodas.checked;
+      checks.forEach(c => {
+        c.checked = valor;
+        c.closest('.check').classList.toggle('marcado', valor);
+      });
+    });
+  }
+
+  body.querySelector('#fJogo').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const posicoesNovas = $$('.pos-row', listaPos).map(r => ({
+      id: r.dataset.id || gerarId(),
+      nome: r.querySelector('.pos-nome').value.trim(),
+      pontos: Number(r.querySelector('.pos-pts').value) || 0
+    })).filter(p => p.nome);
+
+    const participantes = $$('.check input:checked', body).map(i => i.value);
+
+    const dados = {
+      nome: String(fd.get('nome')).trim(),
+      posicoes: posicoesNovas,
+      participantes,
+      secreto: fd.get('secreto') === 'on'
+    };
+    if (!dados.nome) return;
+
+    try {
+      if (j) await api('PUT', '/jogos/' + j.id, dados);
+      else await api('POST', '/jogos', dados);
+      closeModal();
+      await carregarDados(); render();
+      toast('Jogo salvo!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+window.excluirJogo = async function(id) {
+  const j = state.jogos.find(x => x.id === id);
+  if (!j || !confirm(`Excluir o jogo "${j.nome}"?`)) return;
+  try {
+    await api('DELETE', '/jogos/' + id);
+    await carregarDados(); render();
+    toast('Jogo excluído');
+  } catch (e) { toast(e.message, true); }
+};
+
+window.revelarJogo = async function(id) {
+  if (!confirm('Tornar este jogo visível ao público?')) return;
+  try {
+    await api('PUT', '/jogos/' + id + '/revelar');
+    await carregarDados(); render();
+    toast('Jogo revelado!');
+  } catch (e) { toast(e.message, true); }
+};
+
+window.revelarTodosJogos = async function() {
+  if (!confirm('Tornar TODOS os jogos secretos visíveis ao público?\n\nEsta ação não pode ser desfeita.')) return;
+  try {
+    const r = await api('PUT', '/jogos/revelar-todos');
+    await carregarDados(); render();
+    toast(`${r.revelados} jogo(s) revelado(s)`);
+  } catch (e) { toast(e.message, true); }
+};
+
+window.abrirResultados = function(id) {
+  const j = state.jogos.find(x => x.id === id);
+  if (!j) return;
+  if (!j.participantes || !j.participantes.length) {
+    toast('Adicione equipes participantes antes de registrar resultados.', true);
+    return;
+  }
+
+  // Constrói o mapa inverso: posicaoId -> equipeId
+  // (o banco guarda o contrário: equipeId -> posicaoId)
+  const equipePorPosicao = {};
+  Object.entries(j.resultados || {}).forEach(([equipeId, posicaoId]) => {
+    if (posicaoId) equipePorPosicao[posicaoId] = equipeId;
+  });
+
+  const body = openModal('Resultados — ' + j.nome, `
+    <form id="fRes">
+      <p style="margin:0 0 14px;color:var(--txt-3);font-size:13px">
+        Escolha a equipe que ficou em cada posição.
+        Equipes não escolhidas ganham <strong>0 pontos</strong>.
+      </p>
+      <div id="posicoesRes">
+        ${j.posicoes.map(p => `
+          <label style="font-weight:700">
+            ${esc(p.nome)}
+            <span style="color:var(--txt-3);font-weight:400">— ${p.pontos} pts</span>
+            <select data-pos="${p.id}">
+              <option value="">— Nenhuma equipe —</option>
+              ${j.participantes.map(eid => {
+                const eq = state.equipes.find(e => e.id === eid);
+                if (!eq) return '';
+                return `<option value="${eid}" ${equipePorPosicao[p.id] === eid ? 'selected' : ''}>${esc(eq.nome)}</option>`;
+              }).join('')}
+            </select>
+          </label>
+        `).join('')}
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Salvar resultados</button>
+      </div>
+    </form>
+  `);
+
+  const selects = Array.from(body.querySelectorAll('select[data-pos]'));
+
+  // Se o usuário escolher uma equipe numa posição,
+  // remove essa mesma equipe das outras posições (evita duplicidade)
+  selects.forEach(sel => {
+    sel.addEventListener('change', () => {
+      const equipeId = sel.value;
+      if (!equipeId) return;
+      selects.forEach(outra => {
+        if (outra !== sel && outra.value === equipeId) {
+          outra.value = '';
+        }
+      });
+    });
+  });
+
+  body.querySelector('#fRes').onsubmit = async ev => {
+    ev.preventDefault();
+
+    // Monta resultados no formato esperado pelo backend:
+    // { equipeId: posicaoId }
+    const res = {};
+    selects.forEach(sel => {
+      const posId = sel.dataset.pos;
+      const equipeId = sel.value;
+      if (equipeId) res[equipeId] = posId;
+    });
+
+    try {
+      await api('PUT', '/jogos/' + j.id + '/resultados', { resultados: res });
+      closeModal();
+      await carregarDados(); render();
+      toast('Resultados salvos!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+/* ============================================================
+   CRUD — COMPETIÇÕES
+   ============================================================ */
+window.editarCompeticao = function(id) {
+  const c = id ? state.competicoes.find(x => x.id === id) : null;
+  const tipoInicial = c?.tipo || 'mata_mata';
+
+  if (state.equipes.length < 2) { toast('Cadastre ao menos 2 equipes', true); return; }
+
+  const body = openModal(c ? 'Editar competição' : 'Nova competição', `
+    <form id="fComp">
+      <label>Nome da competição *
+        <input name="nome" required maxlength="60" value="${esc(c?.nome || '')}" placeholder="Ex: Copa Interna" autofocus />
+      </label>
+
+      <label>Tipo de competição *
+        <select name="tipo" id="selTipo" ${c ? 'disabled' : ''}>
+          <option value="mata_mata" ${tipoInicial === 'mata_mata' ? 'selected' : ''}>🏆 Mata-Mata</option>
+          <option value="grupos_mata_mata" ${tipoInicial === 'grupos_mata_mata' ? 'selected' : ''}>🌍 Grupos + Mata-Mata</option>
+        </select>
+        ${c ? '<small style="display:block;margin-top:4px;color:var(--txt-3);font-size:11.5px">O tipo não pode ser alterado depois de criado.</small>' : ''}
+      </label>
+
+      <label class="toggle">
+        <input type="checkbox" name="secreto" ${c?.secreto ? 'checked' : ''} />
+        <div>
+          🔒 Competição secreta
+          <small>Não aparece na tela pública até ser revelada</small>
+        </div>
+      </label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <label>🥇 1º lugar
+          <input type="number" name="pontos1" min="0" value="${c?.pontos1 ?? 10}" />
+        </label>
+        <label>🥈 2º lugar
+          <input type="number" name="pontos2" min="0" value="${c?.pontos2 ?? 5}" />
+        </label>
+        <label>🥉 3º lugar
+          <input type="number" name="pontos3" min="0" value="${c?.pontos3 ?? 3}" />
+        </label>
+      </div>
+
+      <div id="camposGrupos" style="display:none;margin-top:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label>Número de grupos
+            <input type="number" name="numGrupos" min="2" max="8" value="${c?.config?.numGrupos ?? 2}" />
+          </label>
+          <label>Classificam por grupo
+            <input type="number" name="classificadosPorGrupo" min="1" max="4" value="${c?.config?.classificadosPorGrupo ?? 2}" />
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label>Pontos por vitória
+            <input type="number" name="pontosVitoria" min="0" value="${c?.config?.pontosVitoria ?? 3}" />
+          </label>
+          <label>Pontos por empate
+            <input type="number" name="pontosEmpate" min="0" value="${c?.config?.pontosEmpate ?? 1}" />
+          </label>
+        </div>
+        <p style="font-size:12px;color:var(--txt-3);margin-top:8px">
+          As equipes serão sorteadas nos grupos automaticamente. Você poderá resortear antes de lançar placares.
+        </p>
+      </div>
+
+      <div class="fieldset">
+        <div class="fieldset-head">
+          <span>Equipes participantes</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--txt-2);cursor:pointer;margin:0">
+            <input type="checkbox" id="marcarTodasComp" style="width:16px;height:16px;margin:0;accent-color:var(--prim)" />
+            Marcar todas
+          </label>
+        </div>
+        <div class="checks">
+          ${state.equipes.map(e => `
+            <label class="check ${c && c.equipes.includes(e.id) ? 'marcado' : ''}">
+              <input type="checkbox" value="${e.id}" ${c && c.equipes.includes(e.id) ? 'checked' : ''} />
+              <span>${esc(e.nome)}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">${c ? 'Salvar' : 'Criar'}</button>
+      </div>
+    </form>
+  `);
+
+  // Mostra/esconde campos de grupo conforme o tipo
+  const selTipo = body.querySelector('#selTipo');
+  const camposGrupos = body.querySelector('#camposGrupos');
+  function atualizarTipo() {
+    camposGrupos.style.display = selTipo.value === 'grupos_mata_mata' ? 'block' : 'none';
+  }
+  selTipo.addEventListener('change', atualizarTipo);
+  atualizarTipo();
+
+  // Checkboxes de equipes
+  const checks = Array.from(body.querySelectorAll('.check input'));
+  const marcarTodas = body.querySelector('#marcarTodasComp');
+  checks.forEach(inp => {
+    inp.addEventListener('change', () => {
+      inp.closest('.check').classList.toggle('marcado', inp.checked);
+      if (marcarTodas) {
+        marcarTodas.checked = checks.length > 0 && checks.every(c => c.checked);
+      }
+    });
+  });
+  if (marcarTodas) {
+    marcarTodas.checked = checks.length > 0 && checks.every(c => c.checked);
+    marcarTodas.addEventListener('change', () => {
+      const valor = marcarTodas.checked;
+      checks.forEach(c => {
+        c.checked = valor;
+        c.closest('.check').classList.toggle('marcado', valor);
+      });
+    });
+  }
+
+  body.querySelector('#fComp').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const equipes = $$('.check input:checked', body).map(i => i.value);
+    if (equipes.length < 2) { toast('Selecione ao menos 2 equipes', true); return; }
+    const tipo = selTipo.value;
+    const dados = {
+      nome: String(fd.get('nome')).trim(),
+      tipo,
+      equipes,
+      pontos1: Number(fd.get('pontos1')) || 0,
+      pontos2: Number(fd.get('pontos2')) || 0,
+      pontos3: Number(fd.get('pontos3')) || 0,
+      secreto: fd.get('secreto') === 'on'
+    };
+    if (tipo === 'grupos_mata_mata') {
+      dados.numGrupos = Number(fd.get('numGrupos')) || 2;
+      dados.classificadosPorGrupo = Number(fd.get('classificadosPorGrupo')) || 2;
+      dados.pontosVitoria = Number(fd.get('pontosVitoria')) || 3;
+      dados.pontosEmpate = Number(fd.get('pontosEmpate')) || 1;
+    }
+    if (!dados.nome) return;
+    try {
+      if (c) await api('PUT', '/competicoes/' + c.id, dados);
+      else await api('POST', '/competicoes', dados);
+      closeModal();
+      await carregarDados(); render();
+      toast(c ? 'Competição salva!' : 'Competição criada!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+window.excluirCompeticao = async function(id) {
+  const c = state.competicoes.find(x => x.id === id);
+  if (!c || !confirm(`Excluir a competição "${c.nome}"?`)) return;
+  try {
+    await api('DELETE', '/competicoes/' + id);
+    await carregarDados(); render();
+    toast('Competição excluída');
+  } catch (e) { toast(e.message, true); }
+};
+
+window.revelarCompeticao = async function(id) {
+  if (!confirm('Tornar esta competição visível ao público?')) return;
+  try {
+    await api('PUT', '/competicoes/' + id + '/revelar');
+    await carregarDados(); render();
+    toast('Competição revelada!');
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ---------- Chaves Mata-Mata ---------- */
+window.abrirChaves = function(id) {
+  const c = state.competicoes.find(x => x.id === id);
+  if (!c) return;
+
+  const nomeEquipe = eid => {
+    const e = state.equipes.find(x => x.id === eid);
+    return e ? e.nome : '—';
+  };
+
+  const body = openModal('Chaves — ' + c.nome, `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:12.5px;color:var(--txt-3)">
+        ${c.tipo === 'grupos_mata_mata' ? '🌍 Grupos + Mata-Mata' : '🏆 Mata-Mata'}
+        · 🥇 ${c.pontos1} · 🥈 ${c.pontos2} · 🥉 ${c.pontos3}
+      </div>
+      <div id="acoesChaves" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    </div>
+    <div id="blocoGrupos"></div>
+    <div id="blocoMataMata"></div>
+    <div id="podio" style="background:var(--bg-3);border-radius:12px;padding:14px;margin-top:18px;font-size:13.5px"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" onclick="closeModal()">Fechar</button>
+    </div>
+  `);
+
+  const blocoGrupos = body.querySelector('#blocoGrupos');
+  const blocoMataMata = body.querySelector('#blocoMataMata');
+  const podioEl = body.querySelector('#podio');
+  const acoesEl = body.querySelector('#acoesChaves');
+
+  /* ====== AÇÕES DO TOPO ====== */
+  function renderAcoes() {
+    const c2 = state.competicoes.find(x => x.id === id);
+    const cfg = c2.config || {};
+    let html = '';
+
+    if (c2.tipo === 'grupos_mata_mata' && !cfg.mataMataGerado) {
+      html += `<button class="btn btn-ghost btn-sm" id="btnResortear">🎲 Sortear grupos</button>`;
+      html += `<button class="btn btn-sm" id="btnGerarMata">⚔️ Gerar mata-mata</button>`;
+    }
+    if (c2.tipo === 'mata_mata') {
+      html += `<button class="btn btn-ghost btn-sm" id="btnRegerar">🔄 Regerar</button>`;
+    }
+    acoesEl.innerHTML = html;
+
+    const btnR = acoesEl.querySelector('#btnRegerar');
+    const btnS = acoesEl.querySelector('#btnResortear');
+    const btnG = acoesEl.querySelector('#btnGerarMata');
+
+    if (btnR) {
+      btnR.onclick = async () => {
+        if (!confirm('Regerar a chave apaga todos os resultados. Continuar?')) return;
+        try {
+          await api('POST', '/competicoes/' + c2.id + '/gerar-chave');
+          await carregarDados();
+          renderAcoes();
+          render();
+          renderPodio();
+          toast('Chave regerada');
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+
+    if (btnS) {
+      btnS.onclick = async () => {
+        if (!confirm('Sortear os grupos novamente? Os grupos atuais serão refeitos.')) return;
+        try {
+          await api('POST', '/competicoes/' + c2.id + '/sortear-grupos');
+          await carregarDados();
+          renderAcoes();
+          render();
+          renderPodio();
+          toast('Grupos resorteados');
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+
+    if (btnG) {
+      btnG.onclick = async () => {
+        if (!confirm('Gerar o mata-mata agora? Confirme que todos os placares de grupo foram lançados.')) return;
+        try {
+          await api('POST', '/competicoes/' + c2.id + '/gerar-mata-mata');
+          await carregarDados();
+          renderAcoes();
+          render();
+          renderPodio();
+          toast('Mata-mata gerado!');
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+  }
+
+  /* ====== BLOCO: GRUPOS ====== */
+  let grupoAtivo = null;  // variável de estado do modal
+
+  function renderGrupos() {
+    const c2 = state.competicoes.find(x => x.id === id);
+    const grupos = c2.grupos;
+    if (!grupos || !grupos.length) {
+      blocoGrupos.innerHTML = '<div class="empty"><p>Sem grupos gerados</p></div>';
+      return;
+    }
+
+    // Inicializa grupo ativo se não tiver
+    if (!grupoAtivo || !grupos.find(g => g.nome === grupoAtivo)) {
+      grupoAtivo = grupos[0].nome;
+    }
+
+    const SIGLAS = {
+      P: 'Partidas jogadas',
+      V: 'Vitórias',
+      E: 'Empates',
+      D: 'Derrotas',
+      GP: 'Gols Pró (marcados)',
+      GC: 'Gols Contra (sofridos)',
+      SG: 'Saldo de Gols',
+      PTS: 'Pontos'
+    };
+
+    // === Abas dos grupos (sem template literal aninhado) ===
+    let abasHTML = '<div style="display:flex;gap:6px;overflow-x:auto;margin-top:16px;padding-bottom:4px;scrollbar-width:thin">';
+    grupos.forEach(g => {
+      const ativo = g.nome === grupoAtivo;
+      const borda = ativo ? 'var(--prim)' : 'var(--borda)';
+      const fundo = ativo ? 'var(--prim)' : 'var(--bg-3)';
+      const cor = ativo ? '#fff' : 'var(--txt-2)';
+      abasHTML += '<button class="tab-grupo ' + (ativo ? 'ativo' : '') + '" data-grupo="' + esc(g.nome) + '"';
+      abasHTML += ' style="flex:0 0 auto;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:700;';
+      abasHTML += ' border:1px solid ' + borda + ';';
+      abasHTML += ' background:' + fundo + ';';
+      abasHTML += ' color:' + cor + ';';
+      abasHTML += ' cursor:pointer;transition:.15s">';
+      abasHTML += 'Grupo ' + esc(g.nome);
+      abasHTML += '</button>';
+    });
+    abasHTML += '</div>';
+
+    // === Grupo ativo (só um) ===
+    const g = grupos.find(x => x.nome === grupoAtivo);
+
+    const classifHTML = g.classificacao.map((c, i) => {
+      const eq = state.equipes.find(e => e.id === c.equipeId);
+      const nome = eq ? eq.nome : '—';
+      const destacar = i < (c2.config.classificadosPorGrupo || 2);
+      return `
+        <tr style="${destacar ? 'background:color-mix(in srgb, var(--prim) 8%, transparent);font-weight:700' : ''}">
+          <td style="padding:10px 8px">${i + 1}º</td>
+          <td style="padding:10px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px">${esc(nome)}</td>
+          <td style="padding:10px 8px;text-align:center">${c.P}</td>
+          <td style="padding:10px 8px;text-align:center">${c.V}</td>
+          <td style="padding:10px 8px;text-align:center">${c.E}</td>
+          <td style="padding:10px 8px;text-align:center">${c.D}</td>
+          <td style="padding:10px 8px;text-align:center">${c.GP}</td>
+          <td style="padding:10px 8px;text-align:center">${c.GC}</td>
+          <td style="padding:10px 8px;text-align:center">${c.SG >= 0 ? '+' : ''}${c.SG}</td>
+          <td style="padding:10px 8px;text-align:center;font-weight:800">${c.PTS}</td>
+        </tr>`;
+    }).join('');
+
+    const partidasHTML = g.partidas.map(p => {
+      const eqA = state.equipes.find(e => e.id === p.equipeA);
+      const eqB = state.equipes.find(e => e.id === p.equipeB);
+      const nomeA = eqA ? eqA.nome : '—';
+      const nomeB = eqB ? eqB.nome : '—';
+      const gA = p.golsA === null || p.golsA === undefined ? '' : p.golsA;
+      const gB = p.golsB === null || p.golsB === undefined ? '' : p.golsB;
+      return `
+        <div class="partida-grupo" style="display:grid;grid-template-columns:1fr 60px 20px 60px 1fr;gap:10px;align-items:center;margin-top:10px">
+          <div style="text-align:right;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nomeA)}</div>
+          <input type="number" min="0" value="${gA}" data-pid="${p.id}" data-lado="a" class="placar-input"
+                 style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
+          <div style="text-align:center;font-weight:700;color:var(--txt-3);font-size:15px">×</div>
+          <input type="number" min="0" value="${gB}" data-pid="${p.id}" data-lado="b" class="placar-input"
+                 style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
+          <div style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nomeB)}</div>
+        </div>`;
+    }).join('');
+
+    const conteudoHTML = `
+      <div style="overflow-x:auto;margin-top:14px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px">
+          <thead>
+            <tr style="background:var(--bg-3);color:var(--txt-3);text-transform:uppercase;font-size:10.5px;letter-spacing:.5px">
+              <th style="padding:10px 8px;text-align:left">#</th>
+              <th style="padding:10px 8px;text-align:left">Equipe</th>
+              ${Object.entries(SIGLAS).map(([sigla, desc]) =>
+                `<th style="padding:10px 8px;cursor:help" title="${esc(desc)}">${sigla}</th>`
+              ).join('')}
+            </tr>
+          </thead>
+          <tbody>${classifHTML}</tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px 16px;font-size:11px;color:var(--txt-3);line-height:1.5">
+        <span><b>P</b> Partidas</span>
+        <span><b>V</b> Vitórias</span>
+        <span><b>E</b> Empates</span>
+        <span><b>D</b> Derrotas</span>
+        <span><b>GP</b> Gols Pró</span>
+        <span><b>GC</b> Gols Contra</span>
+        <span><b>SG</b> Saldo de Gols</span>
+        <span><b>PTS</b> Pontos</span>
+      </div>
+
+      <div style="margin-top:22px;padding:16px;background:var(--bg-3);border-radius:12px">
+        <div style="font-size:12px;font-weight:700;color:var(--txt-3);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">
+          ⚽ Placar
+        </div>
+        <div style="font-size:12px;color:var(--txt-3);margin-bottom:4px">
+          Lance o placar de cada partida. A tabela é atualizada automaticamente.
+        </div>
+        ${partidasHTML}
+      </div>
+    `;
+
+    blocoGrupos.innerHTML = abasHTML + conteudoHTML;
+
+    // === Listeners das abas ===
+    blocoGrupos.querySelectorAll('.tab-grupo').forEach(btn => {
+      btn.addEventListener('click', () => {
+        grupoAtivo = btn.dataset.grupo;
+        renderGrupos();
+      });
+    });
+
+    // === Listeners dos placares ===
+    blocoGrupos.querySelectorAll('.placar-input').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const pid = inp.dataset.pid;
+        const tr = inp.closest('.partida-grupo');
+        const inA = tr.querySelector('input[data-lado="a"]');
+        const inB = tr.querySelector('input[data-lado="b"]');
+        const golsA = inA.value === '' ? null : Number(inA.value);
+        const golsB = inB.value === '' ? null : Number(inB.value);
+        try {
+          await api('PUT', '/competicoes/' + id + '/partidas/' + pid + '/placar', { golsA, golsB });
+          await carregarDados();
+          const modalBody = body.closest('.modal-body');
+          const scrollAntes = modalBody ? modalBody.scrollTop : 0;
+          renderGrupos();
+          if (modalBody) modalBody.scrollTop = scrollAntes;
+        } catch (e) { toast(e.message, true); }
+      });
+    });
+  }
+
+  /* ====== BLOCO: MATA-MATA ====== */
+  function renderMataMata() {
+    const c2 = state.competicoes.find(x => x.id === id);
+    if (!c2 || !c2.partidas?.length) {
+      blocoMataMata.innerHTML = '<div class="empty"><p>Sem chave gerada</p></div>';
+      return;
+    }
+
+    const todas = c2.partidas.filter(p => !p.grupo);
+    const principais = todas.filter(p => !p.isTerceiro);
+    const terceiro = todas.find(p => p.isTerceiro);
+
+    if (!principais.length) {
+      blocoMataMata.innerHTML = '<div class="empty"><p>Mata-mata ainda não foi gerado</p></div>';
+      return;
+    }
+
+    const porRodada = {};
+    principais.forEach(p => {
+      if (!porRodada[p.rodada]) porRodada[p.rodada] = [];
+      porRodada[p.rodada].push(p);
+    });
+    const rodadas = Object.keys(porRodada).map(Number).sort((a, b) => a - b);
+    const totalRodadas = rodadas.length;
+
+    const nomeRodada = r => {
+      const faltam = totalRodadas - r;
+      if (faltam === 0) return '🏆 Final';
+      if (faltam === 1) return 'Semifinal';
+      if (faltam === 2) return 'Quartas de Final';
+      if (faltam === 3) return 'Oitavas de Final';
+      return `Rodada ${r}`;
+    };
+
+    const renderMatch = m => {
+      const nomeA = m.equipeA ? nomeEquipe(m.equipeA) : '—';
+      const nomeB = m.equipeB ? nomeEquipe(m.equipeB) : '—';
+      const classeA = m.vencedor === m.equipeA && m.equipeA ? 'venc' : '';
+      const classeB = m.vencedor === m.equipeB && m.equipeB ? 'venc' : '';
+      const emptyA = !m.equipeA ? 'vazio' : '';
+      const emptyB = !m.equipeB ? 'vazio' : '';
+      const podeClique = !!(m.equipeA && m.equipeB);
+      const disA = !podeClique ? 'disabled' : '';
+      const disB = !podeClique ? 'disabled' : '';
+      return `
+        <div class="matchup">
+          <button class="time-btn ${classeA} ${emptyA}" data-pid="${m.id}" data-venc="${m.equipeA}" data-atual="${m.vencedor}" ${disA}>${esc(nomeA)}</button>
+          <span class="matchup-x">×</span>
+          <button class="time-btn ${classeB} ${emptyB}" data-pid="${m.id}" data-venc="${m.equipeB}" data-atual="${m.vencedor}" ${disB}>${esc(nomeB)}</button>
+        </div>`;
+    };
+
+    let html = '<div class="sec-title" style="margin-top:24px">⚔️ Mata-Mata</div>';
+    for (let i = 0; i < rodadas.length - 1; i++) {
+      const r = rodadas[i];
+      html += `<div class="fase-tag">${esc(nomeRodada(r))}</div>`;
+      porRodada[r].sort((a, b) => a.posicao - b.posicao).forEach(m => html += renderMatch(m));
+    }
+    if (terceiro) {
+      html += `<div class="fase-tag">🥉 3º Lugar</div>`;
+      html += renderMatch(terceiro);
+    }
+    const rFinal = rodadas[rodadas.length - 1];
+    html += `<div class="fase-tag">${esc(nomeRodada(rFinal))}</div>`;
+    porRodada[rFinal].sort((a, b) => a.posicao - b.posicao).forEach(m => html += renderMatch(m));
+
+    blocoMataMata.innerHTML = html;
+
+    // Listeners dos vencedores
+    blocoMataMata.querySelectorAll('.time-btn').forEach(btn => {
+      if (btn.disabled) return;
+      btn.onclick = async () => {
+        const pid = btn.dataset.pid;
+        const venc = btn.dataset.venc;
+        const atual = btn.dataset.atual;
+        const novo = atual === venc ? '' : venc;
+        try {
+          await api('PUT', '/competicoes/' + id + '/partidas/' + pid + '/vencedor', { vencedor: novo });
+          await carregarDados();
+          // Só redesenha o bloco do mata-mata e o pódio
+          renderMataMata();
+          renderPodio();
+        } catch (e) { toast(e.message, true); }
+      };
+    });
+  }
+
+  /* ====== PÓDIO ====== */
+  function renderPodio() {
+    const c3 = state.competicoes.find(x => x.id === id);
+    const podio = calcularPodio(c3);
+    podioEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#b8860b;font-weight:700">🥇 1º lugar (${c3.pontos1} pts)</span><span>${esc(podio.primeiro)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#546e7a;font-weight:700">🥈 2º lugar (${c3.pontos2} pts)</span><span>${esc(podio.segundo)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#bf360c;font-weight:700">🥉 3º lugar (${c3.pontos3} pts)</span><span>${esc(podio.terceiro)}</span></div>
+    `;
+  }
+
+  /* ====== RENDER PRINCIPAL ====== */
+  function render() {
+    const c2 = state.competicoes.find(x => x.id === id);
+    if (c2.tipo === 'grupos_mata_mata') {
+      renderGrupos();
+      const cfg = c2.config || {};
+      if (cfg.mataMataGerado) {
+        renderMataMata();
+      } else {
+        blocoMataMata.innerHTML = '';
+      }
+    } else {
+      blocoGrupos.innerHTML = '';
+      renderMataMata();
+    }
+  }
+
+  renderAcoes();
+  render();
+  renderPodio();
+};
+
+/* ============================================================
+   PENALIDADES
+   ============================================================ */
+window.abrirPenalidades = function() {
+  const body = openModal('Penalidades', `
+    <button class="btn btn-full" onclick="editarPenalidade(null)" style="margin-bottom:14px">+ Nova penalidade</button>
+    <div id="listaPen"></div>
+  `);
+  const el = body.querySelector('#listaPen');
+  if (!state.penalidades.length) {
+    el.innerHTML = '<div class="empty"><p>Nenhuma penalidade registrada</p></div>';
+    return;
+  }
+  el.innerHTML = state.penalidades.map(p => {
+    const eq = state.equipes.find(e => e.id === p.equipeId);
+    return `
+      <div class="card" style="padding:12px">
+        <div class="card-head">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px">${esc(eq ? eq.nome : 'Equipe removida')}</div>
+            <div class="card-sub">${esc(p.motivo)}</div>
+          </div>
+          <span class="tag tag-err">−${Math.abs(p.pontos)} pts</span>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm" onclick="editarPenalidade('${p.id}')">Editar</button>
+          ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirPenalidade('${p.id}')">Excluir</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+};
+
+window.editarPenalidade = function(id) {
+  const p = id ? state.penalidades.find(x => x.id === id) : null;
+  if (!state.equipes.length) { toast('Cadastre equipes primeiro', true); return; }
+  const body = openModal(p ? 'Editar penalidade' : 'Nova penalidade', `
+    <form id="fPen">
+      <label>Equipe *
+        <select name="equipeId" required>
+          ${state.equipes.map(e => `<option value="${e.id}" ${p && p.equipeId === e.id ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Motivo *
+        <input name="motivo" required maxlength="120" value="${esc(p?.motivo || '')}" placeholder="Ex: Atraso na prova" />
+      </label>
+      <label>Pontos a descontar *
+        <input type="number" name="pontos" min="0" required value="${p ? Math.abs(p.pontos) : 5}" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Salvar</button>
+      </div>
+    </form>
+  `);
+  body.querySelector('#fPen').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const dados = {
+      equipeId: String(fd.get('equipeId')),
+      motivo: String(fd.get('motivo')).trim(),
+      pontos: Math.abs(Number(fd.get('pontos')) || 0)
+    };
+    if (!dados.motivo) return;
+    try {
+      if (p) await api('PUT', '/penalidades/' + p.id, dados);
+      else await api('POST', '/penalidades', dados);
+      closeModal();
+      await carregarDados(); render();
+      if (state.secao === 'mais') abrirPenalidades();
+      toast('Penalidade salva!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+window.excluirPenalidade = async function(id) {
+  const p = state.penalidades.find(x => x.id === id);
+  if (!p || !confirm(`Excluir a penalidade "${p.motivo}"?`)) return;
+  try {
+    await api('DELETE', '/penalidades/' + id);
+    await carregarDados(); render();
+    if (state.secao === 'mais') abrirPenalidades();
+    toast('Penalidade excluída');
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ============================================================
+   USUÁRIOS
+   ============================================================ */
+window.abrirUsuarios = function() {
+  const body = openModal('Usuários', `
+    <button class="btn btn-full" onclick="editarUsuario(null)" style="margin-bottom:14px">+ Novo usuário</button>
+    <div id="listaU"></div>
+  `);
+  const el = body.querySelector('#listaU');
+  if (!state.usuarios.length) {
+    el.innerHTML = '<div class="empty"><p>Nenhum usuário</p></div>';
+    return;
+  }
+
+  // Agrupa por organização (útil para o admin geral)
+  const porOrg = {};
+  state.usuarios.forEach(u => {
+    const nomeOrg = u.org_nome || 'Sem organização';
+    if (!porOrg[nomeOrg]) porOrg[nomeOrg] = [];
+    porOrg[nomeOrg].push(u);
+  });
+
+  // Ordena as orgs alfabeticamente
+  const orgsOrdenadas = Object.keys(porOrg).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  el.innerHTML = orgsOrdenadas.map(nomeOrg => `
+    <div style="margin-bottom:16px">
+      <div style="font-size:11.5px;font-weight:700;color:var(--txt-3);
+                  text-transform:uppercase;letter-spacing:1px;margin:4px 0 8px">
+        🏢 ${esc(nomeOrg)}
+      </div>
+      ${porOrg[nomeOrg].map(u => `
+        <div class="card" style="padding:12px">
+          <div class="card-head">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px">${esc(u.nome)}</div>
+              <div class="card-sub">
+                @${esc(u.usuario)} ·
+                <span class="tag ${u.papel === 'responsavel' ? 'tag-ok' : u.papel === 'admin_geral' ? 'tag-prim' : ''}">${u.papel}</span>
+                ${!u.ativo ? ' <span class="tag tag-err">inativo</span>' : ''}
+              </div>
+            </div>
+          </div>
+          ${u.papel !== 'admin_geral' ? `
+            <div class="card-actions">
+              <button class="btn btn-ghost btn-sm" onclick="editarUsuario(${u.id})">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="excluirUsuario(${u.id})">Excluir</button>
+            </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+};
+
+window.editarUsuario = function(id) {
+  const u = id ? state.usuarios.find(x => x.id === id) : null;
+  const isAdminLogado = state.usuario.papel === 'admin_geral';
+
+  // Só admin_geral escolhe a org. Responsável cria automaticamente na própria.
+  const seletorOrg = (!u && isAdminLogado) ? `
+    <label>Organização *
+      <select name="orgId" required>
+        <option value="">— Selecione —</option>
+        ${state.orgs.map(o => `<option value="${o.id}">${esc(o.nome)}</option>`).join('')}
+      </select>
+    </label>
+  ` : '';
+
+  const seletorPapel = (!u && isAdminLogado) ? `
+    <label>Papel *
+      <select name="papel" required>
+        <option value="organizador">Organizador</option>
+        <option value="responsavel">Responsável</option>
+      </select>
+    </label>
+  ` : '';
+
+  const body = openModal(u ? 'Editar usuário' : 'Novo usuário', `
+    <form id="fU">
+      <label>Nome completo *
+        <input name="nome" required maxlength="80" value="${esc(u?.nome || '')}" autofocus />
+      </label>
+      <label>Usuário (login) *
+        <input name="usuario" required maxlength="40" value="${esc(u?.usuario || '')}" ${u ? 'disabled' : ''} placeholder="ex: maria.silva" />
+      </label>
+      ${!u ? `<label>Senha *<input type="password" name="senha" required minlength="6" placeholder="mínimo 6 caracteres" /></label>` : ''}
+      ${u ? `<label>Nova senha (deixe vazio para manter)<input type="password" name="senha" minlength="6" placeholder="•••••" /></label>` : ''}
+      ${seletorOrg}
+      ${seletorPapel}
+      <label class="toggle">
+        <input type="checkbox" name="ativo" ${!u || u.ativo ? 'checked' : ''} />
+        <div>Ativo</div>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Salvar</button>
+      </div>
+    </form>
+  `);
+  body.querySelector('#fU').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const dados = {
+      nome: String(fd.get('nome')).trim(),
+      usuario: String(fd.get('usuario')).trim(),
+      senha: String(fd.get('senha') || ''),
+      ativo: fd.get('ativo') === 'on'
+    };
+    if (isAdminLogado && !u) {
+      dados.orgId = String(fd.get('orgId') || '');
+      dados.papel = String(fd.get('papel') || 'organizador');
+      if (!dados.orgId) { toast('Selecione a organização', true); return; }
+    }
+    if (!dados.nome) return;
+    try {
+      if (u) {
+        const upd = { nome: dados.nome, ativo: dados.ativo };
+        if (dados.senha) upd.senha = dados.senha;
+        await api('PUT', '/usuarios/' + u.id, upd);
+      } else {
+        if (!dados.usuario || !dados.senha) return;
+        await api('POST', '/usuarios', dados);
+      }
+      closeModal();
+      await carregarDados(); render();
+      abrirUsuarios();
+      toast('Usuário salvo!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+window.excluirUsuario = async function(id) {
+  const u = state.usuarios.find(x => x.id === id);
+  if (!u || !confirm(`Excluir o usuário "${u.nome}"?`)) return;
+  try {
+    await api('DELETE', '/usuarios/' + id);
+    await carregarDados(); render();
+    abrirUsuarios();
+    toast('Usuário excluído');
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ============================================================
+   ORGANIZAÇÕES (admin geral)
+   ============================================================ */
+window.abrirOrgs = function() {
+  const body = openModal('Organizações', `
+    <button class="btn btn-full" onclick="editarOrg(null)" style="margin-bottom:14px">+ Nova organização</button>
+    <div id="listaO"></div>
+  `);
+  const el = body.querySelector('#listaO');
+  if (!state.orgs.length) { el.innerHTML = '<div class="empty"><p>Nenhuma organização</p></div>'; return; }
+  el.innerHTML = state.orgs.map(o => `
+    <div class="card" style="padding:12px">
+      <div class="card-head" style="align-items:center">
+        <div style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:22px;background:${esc(o.cor || '#6366f1')};flex-shrink:0">${esc(o.emoji)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14.5px">${esc(o.nome)} ${!o.ativo ? '<span class="tag tag-err">inativa</span>' : ''}</div>
+          <div class="card-sub">${o.usuarios} usuário${o.usuarios === 1 ? '' : 's'} · ${o.equipes} equipe${o.equipes === 1 ? '' : 's'} · <code>${esc(o.slug)}</code></div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editarOrg('${o.id}')">Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="excluirOrg('${o.id}')">Excluir</button>
+      </div>
+    </div>
+  `).join('');
+};
+
+window.editarOrg = function(id) {
+  const o = id ? state.orgs.find(x => x.id === id) : null;
+  const body = openModal(o ? 'Editar organização' : 'Nova organização', `
+    <form id="fOrg">
+      <label>Nome *
+        <input name="nome" required maxlength="60" value="${esc(o?.nome || '')}" placeholder="Ex: Medicina" autofocus />
+      </label>
+
+      <label>Cor
+        <input type="color" name="cor" value="${esc(o?.cor || '#6366f1')}" style="height:46px;padding:4px" />
+      </label>
+
+      <label>Foto da organização
+        <input type="file" accept="image/*" id="inputImagem" style="padding:10px;font-size:13px" />
+        <input type="hidden" name="imagem" id="inputImagemBase64" value="${esc(o?.imagem || '')}" />
+        <div style="font-size:11.5px;color:var(--txt-3);margin-top:4px">
+          Opcional. Máx 500 KB. Se não enviar, usaremos as iniciais do nome.
+        </div>
+      </label>
+
+      <div id="previewImagem" style="margin-top:10px;display:flex;align-items:center;gap:12px"></div>
+
+      ${o ? `<label class="toggle">
+        <input type="checkbox" name="ativo" ${o.ativo ? 'checked' : ''} />
+        <div>Ativa</div>
+      </label>` : ''}
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Salvar</button>
+      </div>
+    </form>
+  `);
+
+  const inputFile = body.querySelector('#inputImagem');
+  const inputBase64 = body.querySelector('#inputImagemBase64');
+  const preview = body.querySelector('#previewImagem');
+  const nomeInput = body.querySelector('input[name="nome"]');
+  const corInput = body.querySelector('input[name="cor"]');
+
+  function iniciais(nome) {
+    const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+    if (!partes.length) return '?';
+    if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+    return (partes[0][0] + partes[1][0]).toUpperCase();
+  }
+
+  function atualizarPreview() {
+    const val = inputBase64.value;
+    const nomeAtual = nomeInput.value || '?';
+    const corAtual = corInput.value || '#6366f1';
+
+    if (val) {
+      preview.innerHTML = `
+        <div style="width:64px;height:64px;border-radius:14px;overflow:hidden;border:1px solid var(--borda);flex-shrink:0">
+          <img src="${esc(val)}" style="width:100%;height:100%;object-fit:cover" />
+        </div>
+        <div style="flex:1;font-size:12.5px;color:var(--txt-3)">Foto atual</div>
+        <button type="button" class="btn btn-danger btn-sm" id="btnLimparImg">Remover</button>
+      `;
+      preview.querySelector('#btnLimparImg').onclick = () => {
+        inputFile.value = '';
+        inputBase64.value = '';
+        atualizarPreview();
+      };
+    } else {
+      preview.innerHTML = `
+        <div style="width:64px;height:64px;border-radius:14px;display:grid;place-items:center;
+                    background:${esc(corAtual)};color:#fff;font-weight:800;font-size:22px;flex-shrink:0">
+          ${esc(iniciais(nomeAtual))}
+        </div>
+        <div style="flex:1;font-size:12.5px;color:var(--txt-3)">
+          Sem foto — será usado este selo com as iniciais
+        </div>
+      `;
+    }
+  }
+
+  atualizarPreview();
+  nomeInput.addEventListener('input', atualizarPreview);
+  corInput.addEventListener('input', atualizarPreview);
+
+  inputFile.addEventListener('change', () => {
+    const file = inputFile.files[0];
+    if (!file) return;
+    if (file.size > 500_000) {
+      toast('Imagem muito grande (máx 500 KB). Comprima antes de enviar.', true);
+      inputFile.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      inputBase64.value = reader.result;
+      atualizarPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+
+  body.querySelector('#fOrg').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const dados = {
+      nome: String(fd.get('nome')).trim(),
+      cor: String(fd.get('cor') || '#6366f1'),
+      imagem: String(fd.get('imagem') || ''),
+      ativo: fd.get('ativo') ? fd.get('ativo') === 'on' : true
+    };
+    if (!dados.nome) return;
+    try {
+      if (o) await api('PUT', '/orgs/' + o.id, dados);
+      else await api('POST', '/orgs', dados);
+      closeModal();
+      await carregarDados(); render();
+      abrirOrgs();
+      toast('Organização salva!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+window.excluirOrg = async function(id) {
+  const o = state.orgs.find(x => x.id === id);
+  if (!o || !confirm(`Excluir "${o.nome}"?\n\nTODOS os dados dessa org serão apagados.`)) return;
+  try {
+    await api('DELETE', '/orgs/' + id);
+    await carregarDados(); render();
+    abrirOrgs();
+    toast('Organização excluída');
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ============================================================
+   AUDITORIA
+   ============================================================ */
+window.abrirAuditoria = function() {
+  const body = openModal('Auditoria', `
+    <div class="filtros">
+      <input id="fUsuario" placeholder="Usuário" />
+      <select id="fEntidade">
+        <option value="">Todos</option>
+        <option value="jogo">Jogo</option>
+        <option value="competicao">Competição</option>
+      </select>
+      <input id="fDe" type="date" />
+      <input id="fAte" type="date" />
+    </div>
+    <button class="btn btn-full" id="fAplicar" style="margin-bottom:14px">Filtrar</button>
+    <div id="listaA"></div>
+  `);
+  const el = body.querySelector('#listaA');
+  const renderLista = (items) => {
+    if (!items.length) { el.innerHTML = '<div class="empty"><p>Nenhum registro</p></div>'; return; }
+    el.innerHTML = items.map(a => {
+      let antigo, novo;
+      try { antigo = JSON.parse(a.valor_antigo); } catch { antigo = a.valor_antigo; }
+      try { novo = JSON.parse(a.valor_novo); } catch { novo = a.valor_novo; }
+      return `
+        <div class="audit-row">
+          <div class="top">
+            <span class="nome">${esc(a.usuario_nome)}</span>
+            <span class="quando">${fmtData(a.criado_em)}</span>
+          </div>
+          <div class="detalhe">
+            <strong>${esc(a.entidade_nome || a.entidade)}</strong>
+            ${a.acao === 'alterar_vencedor' ? 'teve vencedor alterado' : 'teve placar alterado'}
+          </div>
+        </div>`;
+    }).join('');
+  };
+  renderLista(state.auditoria);
+
+  body.querySelector('#fAplicar').onclick = async () => {
+    const qs = new URLSearchParams();
+    const u = body.querySelector('#fUsuario').value.trim();
+    const e = body.querySelector('#fEntidade').value;
+    const d = body.querySelector('#fDe').value;
+    const a = body.querySelector('#fAte').value;
+    if (u) qs.set('usuario', u);
+    if (e) qs.set('entidade', e);
+    if (d) qs.set('de', d);
+    if (a) qs.set('ate', a + 'T23:59:59Z');
+    try {
+      const items = await api('GET', '/auditoria' + (qs.toString() ? '?' + qs : ''));
+      renderLista(items);
+    } catch (err) { toast(err.message, true); }
+  };
+};
+window.abrirTrocarSenha = function() {
+  const body = openModal('Trocar minha senha', `
+    <form id="fSenha">
+      <label>Senha atual *
+        <input type="password" name="atual" required autofocus placeholder="••••••" />
+      </label>
+      <label>Nova senha *
+        <input type="password" name="nova" required minlength="6" placeholder="mínimo 6 caracteres" />
+      </label>
+      <label>Confirmar nova senha *
+        <input type="password" name="confirma" required minlength="6" placeholder="••••••" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn">Alterar senha</button>
+      </div>
+    </form>
+  `);
+  body.querySelector('#fSenha').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const atual = String(fd.get('atual') || '');
+    const nova = String(fd.get('nova') || '');
+    const confirma = String(fd.get('confirma') || '');
+    if (nova !== confirma) {
+      toast('As senhas não coincidem', true);
+      return;
+    }
+    if (nova.length < 6) {
+      toast('A nova senha deve ter ao menos 6 caracteres', true);
+      return;
+    }
+    try {
+      await api('PUT', '/me/senha', { senhaAtual: atual, senhaNova: nova });
+      closeModal();
+      toast('Senha alterada com sucesso!');
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
+/* ============================================================
+   INICIALIZAÇÃO
+   ============================================================ */
+(async function init() {
+  if (state.token && state.usuario) {
+    try { await iniciarApp(); }
+    catch { logout(); }
+  } else {
+    $('#telaLogin').style.display = 'grid';
+  }
+})();
+</script>
+</body>
+</html>
