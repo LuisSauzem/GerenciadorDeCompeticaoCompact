@@ -1,23 +1,67 @@
+# ============================================================
+# fly.toml — Configuração do deploy no Fly.io
+# ------------------------------------------------------------
+# Este arquivo é lido pelo comando "flyctl deploy".
+# Documentação completa: https://fly.io/docs/reference/configuration/
+# ============================================================
+
+# Nome único da aplicação no Fly.io (vira parte da URL: <app>.fly.dev)
 app = 'compactjrGerenciadorDePontos'
+
+# Região principal onde as máquinas rodam
+# gru = São Paulo | iad = Washington | mad = Madri | ...
 primary_region = 'gru'
 
 [build]
+  # Sem configuração extra — o Fly.io detecta o Dockerfile automaticamente
 
+# ============================================================
+# Configuração do serviço HTTP
+# ============================================================
 [http_service]
+  # Porta interna do container (precisa bater com o EXPOSE do Dockerfile)
   internal_port = 3000
+
+  # Redireciona HTTP para HTTPS automaticamente
   force_https = true
+
+  # Suspende a máquina quando não há acessos
+  # (economiza a cota gratuita, mas o primeiro acesso demora ~2s)
   auto_stop_machines = 'stop'
+
+  # Inicia a máquina automaticamente quando chega uma requisição
   auto_start_machines = true
+
+  # Número mínimo de máquinas rodando (0 = pode parar totalmente)
   min_machines_running = 0
+
+  # Nome do processo (usado internamente pelo Fly)
   processes = ['app']
 
+# ============================================================
+# Configuração da máquina virtual
+# ============================================================
 [[vm]]
-  memory = '512mb'
-  cpus = 1
+  memory = '512mb'    # RAM da VM (mínimo aceito: 256mb)
+  cpus = 1            # 1 vCPU compartilhada
 
+# ============================================================
+# Volume persistente
+# ------------------------------------------------------------
+# O volume é o "HD" onde o banco SQLite é armazenado.
+# Ele sobrevive a reinícios e deploys.
+# Precisa ser criado UMA VEZ com:
+#   flyctl volumes create compactjr_data --size 1
+# ============================================================
 [mounts]
-  source = "compactjr_data"
-  destination = "/data"
+  source = "compactjr_data"   # nome do volume (definido na criação)
+  destination = "/data"       # onde é montado dentro do container
 
+# ============================================================
+# Variáveis de ambiente (não-secretas)
+# ------------------------------------------------------------
+# Para segredos como JWT_SECRET e ADMIN_PASS, use:
+#   flyctl secrets set NOME="valor"
+# ============================================================
 [env]
-  DATA_DIR = "/data"
+  DATA_DIR = "/data"          # pasta onde o SQLite grava o arquivo

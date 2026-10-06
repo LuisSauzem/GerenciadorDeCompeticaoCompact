@@ -1,3 +1,18 @@
+// ============================================================
+// server.js — API Express do CompAct Jr.
+// ------------------------------------------------------------
+// Este arquivo contém TODA a lógica do backend:
+//   - Autenticação (login + JWT)
+//   - Middlewares de permissão (por papel e por organização)
+//   - CRUD de organizações, usuários, equipes, jogos, penalidades
+//   - CRUD de competições (mata-mata e grupos + mata-mata)
+//   - Geração automática de chaves e propagação de vencedores
+//   - Classificação geral e auditoria
+//
+// Fluxo de uma requisição típica:
+//   fetch → auth (valida JWT) → middleware de permissão → handler → res.json
+// ============================================================
+
 const express = require('express');
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -9,14 +24,39 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 
+// ------------------------------------------------------------
+// Middlewares globais
+// ------------------------------------------------------------
+// express.json()   → parseia corpo JSON (limite de 1 MB)
+// express.static() → serve os arquivos da pasta /public
+// ------------------------------------------------------------
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
+// uid()     → gera IDs únicos (hex de 16 caracteres)
+// slugify() → converte "Medicina UFSM" em "medicina-ufsm"
+// ------------------------------------------------------------
 const uid = () => crypto.randomBytes(8).toString('hex');
 const slugify = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
-/* ============ AUTH ============ */
+
+// ============================================================
+// AUTENTICAÇÃO E PERMISSÕES
+// ============================================================
+
+/**
+ * Middleware `auth`
+ * ------------------------------------------------------------
+ * Roda em TODAS as rotas protegidas.
+ *   1. Lê o header "Authorization: Bearer <token>"
+ *   2. Valida o JWT com JWT_SECRET
+ *   3. Busca o usuário no banco (pra confirmar que ainda está ativo)
+ *   4. Injeta `req.user` com { id, org_id, usuario, nome, papel, ativo }
+ */
 function auth(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -32,6 +72,12 @@ function auth(req, res, next) {
   }
 }
 
+/**
+ * Middleware `exigirPapel(...papeis)`
+ * ------------------------------------------------------------
+ * Uso: `app.post('/rota', auth, exigirPapel('responsavel'), handler)`
+ * Bloqueia se o usuário logado não tiver NENHUM dos papéis listados.
+ */
 function exigirPapel(...papeis) {
   return (req, res, next) => {
     if (!papeis.includes(req.user.papel)) {
@@ -41,11 +87,27 @@ function exigirPapel(...papeis) {
   };
 }
 
+/**
+ * Helper `exigirOrgPropria(req, orgId)`
+ * ------------------------------------------------------------
+ * Retorna true se:
+ *   - o usuário é admin_geral (vê tudo), OU
+ *   - o usuário pertence à organização passada
+ * Usado dentro dos handlers para checar se o usuário pode
+ * mexer num recurso específico de determinada org.
+ */
 function exigirOrgPropria(req, orgId) {
   if (req.user.papel === 'admin_geral') return true;
   return req.user.org_id === orgId;
 }
 
+/**
+ * Middleware `bloquearAdminGeral`
+ * ------------------------------------------------------------
+ * Algumas rotas (equipes, jogos, competições) NÃO podem ser
+ * usadas pelo admin geral — ele só cria orgs e usuários.
+ * Este middleware retorna 403 se o usuário logado for admin_geral.
+ */
 function bloquearAdminGeral(req, res, next) {
   if (req.user.papel === 'admin_geral') {
     return res.status(403).json({ erro: 'Admin geral não pode executar essa ação' });
@@ -54,7 +116,18 @@ function bloquearAdminGeral(req, res, next) {
 }
 
 
-/* Auditoria — registra alteração de placar/vencedor */
+/**
+ * Função `registrarAuditoria({ ... })`
+ * ------------------------------------------------------------
+ * Insere um registro na tabela `auditoria`.
+ * Chamada automaticamente sempre que um placar/vencedor muda.
+ *
+ * Campos gravados:
+ *   - Quem (usuario_id, usuario_nome)
+ *   - O quê (entidade, entidade_id, entidade_nome)
+ *   - Qual ação (acao)
+ *   - Valor antes e depois (JSON serializado)
+ */
 function registrarAuditoria({ orgId, user, entidade, entidadeId, entidadeNome, acao, valorAntigo, valorNovo }) {
   db.prepare(`INSERT INTO auditoria
     (org_id, usuario_id, usuario_nome, entidade, entidade_id, entidade_nome, acao, valor_antigo, valor_novo)
@@ -63,13 +136,27 @@ function registrarAuditoria({ orgId, user, entidade, entidadeId, entidadeNome, a
          acao, JSON.stringify(valorAntigo ?? null), JSON.stringify(valorNovo ?? null));
 }
 
-/* ============ LOGIN ============ */
+
+// ============================================================
+// ROTAS DE AUTENTICAÇÃO
+// ============================================================
+
+/**
+ * POST /api/auth/login
+ * ------------------------------------------------------------
+ * Body: { usuario, senha }
+ * Retorna: { token (JWT 7d), usuario: { id, usuario, nome, papel, orgId, orgNome, orgSlug } }
+ *
+ * O token é gravado no localStorage do frontend e enviado
+ * em todas as requisições seguintes via header Authorization.
+ */
 app.post('/api/auth/login', (req, res) => {
   const { usuario, senha } = req.body || {};
   if (!usuario || !senha) return res.status(400).json({ erro: 'Informe usuário e senha' });
   const u = db.prepare(`SELECT u.*, o.nome AS org_nome, o.slug AS org_slug
                         FROM usuarios u LEFT JOIN organizacoes o ON o.id = u.org_id
                         WHERE u.usuario = ?`).get(usuario);
+  // bcrypt.compareSync compara a senha digitada com o hash gravado
   if (!u || !u.ativo || !bcrypt.compareSync(senha, u.senha_hash)) {
     return res.status(401).json({ erro: 'Usuário ou senha inválidos' });
   }
@@ -81,7 +168,13 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-/* ============ ME ============ */
+
+/**
+ * GET /api/me
+ * ------------------------------------------------------------
+ * Retorna os dados do usuário logado + a organização dele.
+ * Usado para verificar se o token ainda é válido.
+ */
 app.get('/api/me', auth, (req, res) => {
   const org = req.user.org_id
     ? db.prepare('SELECT id, nome, slug, cor, emoji FROM organizacoes WHERE id = ?').get(req.user.org_id)
@@ -90,7 +183,15 @@ app.get('/api/me', auth, (req, res) => {
 });
 
 
-/* ============ TROCAR PRÓPRIA SENHA ============ */
+/**
+ * PUT /api/me/senha
+ * ------------------------------------------------------------
+ * Body: { senhaAtual, senhaNova }
+ * Permite o próprio usuário trocar a senha dele.
+ * Valida:
+ *   - senhaNova com pelo menos 6 caracteres
+ *   - senhaAtual confere com o hash no banco
+ */
 app.put('/api/me/senha', auth, (req, res) => {
   const { senhaAtual, senhaNova } = req.body || {};
   if (!senhaAtual || !senhaNova) {
@@ -111,7 +212,21 @@ app.put('/api/me/senha', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-/* ============ ROTAS PÚBLICAS ============ */
+
+// ============================================================
+// ROTAS PÚBLICAS (SEM LOGIN)
+// ------------------------------------------------------------
+// Usadas pela tela `/` (index.html) — qualquer pessoa acessa.
+// Retornam apenas dados de organizações com ativo=1 e jogos/competicoes
+// com secreto=0.
+// ============================================================
+
+/**
+ * GET /api/publico/orgs
+ * ------------------------------------------------------------
+ * Lista todas as organizações ativas (cards da home).
+ * Inclui a contagem de equipes de cada uma.
+ */
 app.get('/api/publico/orgs', (req, res) => {
   const orgs = db.prepare(`SELECT id, nome, slug, cor, emoji FROM organizacoes
                            WHERE ativo = 1 ORDER BY nome`).all();
@@ -123,19 +238,35 @@ app.get('/api/publico/orgs', (req, res) => {
   res.json(comContagem);
 });
 
+
+/**
+ * GET /api/publico/orgs/:slug
+ * ------------------------------------------------------------
+ * Retorna TUDO que o público precisa sobre uma organização:
+ *   - Dados da org
+ *   - Classificação geral (pontos, penalidades, total)
+ *   - Jogos públicos (com posições, participantes e resultados)
+ *   - Competições públicas (com partidas e grupos calculados)
+ *
+ * É o endpoint mais pesado do sistema — faz várias queries,
+ * calcula a classificação e devolve tudo pronto pro frontend.
+ */
 app.get('/api/publico/orgs/:slug', (req, res) => {
+  // 1. Busca a organização pelo slug
   const org = db.prepare('SELECT id, nome, slug, cor, emoji, imagem FROM organizacoes WHERE slug = ? AND ativo = 1').get(req.params.slug);
   if (!org) return res.status(404).json({ erro: 'Organização não encontrada' });
 
+  // 2. Busca os dados da org (apenas não-secretos)
   const equipes = db.prepare('SELECT id, nome, responsavel FROM equipes WHERE org_id = ? ORDER BY nome').all(org.id);
   const jogos = db.prepare('SELECT * FROM jogos WHERE org_id = ? AND secreto = 0 ORDER BY nome').all(org.id);
   const penalidades = db.prepare('SELECT equipe_id, pontos FROM penalidades WHERE org_id = ?').all(org.id);
   const competicoes = db.prepare('SELECT * FROM competicoes WHERE org_id = ? AND secreto = 0').all(org.id);
 
-  // Calcula pontuação
+  // 3. Inicia o cálculo da classificação (mapa equipeId -> {pontos, penal})
   const mapa = new Map();
   equipes.forEach(e => mapa.set(e.id, { id: e.id, nome: e.nome, pontos: 0, penal: 0 }));
 
+  // 4. Soma pontos dos jogos "por posição"
   jogos.forEach(j => {
     const part = JSON.parse(j.participantes_json || '[]');
     const pos = JSON.parse(j.posicoes_json || '[]');
@@ -143,17 +274,20 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
     part.forEach(eid => {
       const item = mapa.get(eid);
       if (!item) return;
-      const pid = res[eid];
+      const pid = res[eid];                        // id da posição atribuída
       const p = pos.find(x => x.id === pid);
       if (p) item.pontos += Number(p.pontos) || 0;
     });
   });
 
+  // 5. Soma pontos das competições (mata-mata e grupos)
   competicoes.forEach(c => {
     const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY rodada, posicao').all(c.id);
+    // Importante: filtrar !p.grupo para não confundir com partidas de grupo
     const principais = partidas.filter(p => !p.is_terceiro && !p.grupo);
     const terc = partidas.find(p => p.is_terceiro && !p.grupo);
     if (!principais.length) return;
+    // A final é a partida de maior rodada que tem vencedor definido
     const maxR = Math.max(...principais.map(p => p.rodada));
     const final = principais.find(p => p.rodada === maxR && p.vencedor && p.equipe_a && p.equipe_b);
     if (final) {
@@ -169,16 +303,19 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
     }
   });
 
+  // 6. Subtrai as penalidades
   penalidades.forEach(p => {
     const item = mapa.get(p.equipe_id);
     if (item) item.penal += Number(p.pontos) || 0;
   });
 
+  // 7. Ordena: mais pontos primeiro, desempate por nome
   const classificacao = Array.from(mapa.values())
     .map(c => ({ ...c, total: c.pontos - c.penal }))
     .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, 'pt-BR'));
 
-    const ptStmt = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao, id');
+  // 8. Monta a resposta final (jogos e competições em formato "amigável")
+  const ptStmt = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao, id');
   res.json({
     org,
     equipes: classificacao,
@@ -200,7 +337,7 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
         golsB: (p.gols_b === null || p.gols_b === undefined) ? null : p.gols_b
       }));
 
-      // Se for grupos, calcula classificação de cada grupo
+      // Se for grupos_mata_mata, calcula a classificação de cada grupo
       let gruposOut = null;
       if (c.tipo === 'grupos_mata_mata') {
         const nomesG = [...new Set(todas.filter(p => p.grupo).map(p => p.grupo))].sort();
@@ -230,7 +367,15 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
   });
 });
 
-/* ============ ORGANIZAÇÕES (admin_geral) ============ */
+
+// ============================================================
+// ORGANIZAÇÕES (apenas admin_geral)
+// ============================================================
+
+/**
+ * GET /api/orgs — lista todas as organizações
+ * Inclui contagem de usuários e equipes.
+ */
 app.get('/api/orgs', auth, exigirPapel('admin_geral'), (req, res) => {
   const orgs = db.prepare('SELECT * FROM organizacoes ORDER BY nome').all();
   const countUser = db.prepare('SELECT COUNT(*) AS n FROM usuarios WHERE org_id = ?');
@@ -242,12 +387,16 @@ app.get('/api/orgs', auth, exigirPapel('admin_geral'), (req, res) => {
   })));
 });
 
+/**
+ * POST /api/orgs — cria uma organização
+ * Gera slug único a partir do nome (adiciona sufixo se já existir).
+ */
 app.post('/api/orgs', auth, exigirPapel('admin_geral'), (req, res) => {
   const { nome, cor, emoji } = req.body || {};
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
   let slug = slugify(nome);
   if (!slug) slug = 'org-' + uid().slice(0, 6);
-  // Garante unicidade
+  // Garante unicidade do slug
   let baseSlug = slug, i = 1;
   while (db.prepare('SELECT id FROM organizacoes WHERE slug = ?').get(slug)) {
     slug = baseSlug + '-' + i++; if (i > 50) return res.status(400).json({ erro: 'Não foi possível gerar slug' });
@@ -258,6 +407,10 @@ app.post('/api/orgs', auth, exigirPapel('admin_geral'), (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM organizacoes WHERE id = ?').get(id));
 });
 
+/**
+ * PUT /api/orgs/:id — atualiza uma organização
+ * Aceita: nome, cor, emoji, ativo
+ */
 app.put('/api/orgs/:id', auth, exigirPapel('admin_geral'), (req, res) => {
   const { nome, cor, emoji, ativo } = req.body || {};
   const org = db.prepare('SELECT * FROM organizacoes WHERE id = ?').get(req.params.id);
@@ -268,13 +421,27 @@ app.put('/api/orgs/:id', auth, exigirPapel('admin_geral'), (req, res) => {
   res.json(db.prepare('SELECT * FROM organizacoes WHERE id = ?').get(req.params.id));
 });
 
+/**
+ * DELETE /api/orgs/:id — exclui uma organização
+ * CASCADE: apaga tudo dela (usuários, equipes, jogos...).
+ */
 app.delete('/api/orgs/:id', auth, exigirPapel('admin_geral'), (req, res) => {
   const r = db.prepare('DELETE FROM organizacoes WHERE id = ?').run(req.params.id);
   if (r.changes === 0) return res.status(404).json({ erro: 'Organização não encontrada' });
   res.json({ ok: true });
 });
 
-/* ============ USUÁRIOS ============ */
+
+// ============================================================
+// USUÁRIOS
+// ============================================================
+
+/**
+ * GET /api/usuarios
+ * ------------------------------------------------------------
+ * - admin_geral vê TODOS os usuários (com org_nome)
+ * - responsavel vê apenas os da própria org
+ */
 app.get('/api/usuarios', auth, (req, res) => {
   const where = req.user.papel === 'admin_geral' ? '' : 'WHERE u.org_id = ?';
   const params = req.user.papel === 'admin_geral' ? [] : [req.user.org_id];
@@ -286,6 +453,12 @@ app.get('/api/usuarios', auth, (req, res) => {
   res.json(rows);
 });
 
+/**
+ * POST /api/usuarios
+ * ------------------------------------------------------------
+ * - admin_geral cria usuários em QUALQUER org, com papel 'organizador' ou 'responsavel'
+ * - responsavel cria apenas 'organizador' na PRÓPRIA org
+ */
 app.post('/api/usuarios', auth, exigirPapel('responsavel', 'admin_geral'), (req, res) => {
   const { usuario, senha, nome, orgId, papel } = req.body || {};
   if (!usuario || !senha || !nome) return res.status(400).json({ erro: 'Usuário, senha e nome são obrigatórios' });
@@ -299,7 +472,7 @@ app.post('/api/usuarios', auth, exigirPapel('responsavel', 'admin_geral'), (req,
     orgFinal = req.user.org_id;
   }
 
-  // Só admin_geral pode criar 'responsavel'. Responsável só cria 'organizador'.
+  // Regra: só admin_geral pode criar responsável
   let papelFinal = 'organizador';
   if (req.user.papel === 'admin_geral' && (papel === 'responsavel' || papel === 'organizador')) {
     papelFinal = papel;
@@ -315,6 +488,10 @@ app.post('/api/usuarios', auth, exigirPapel('responsavel', 'admin_geral'), (req,
   res.status(201).json({ id: r.lastInsertRowid, usuario, nome, papel: papelFinal, orgId: orgFinal });
 });
 
+/**
+ * PUT /api/usuarios/:id — edita nome, senha ou status "ativo"
+ * Responsável só pode editar usuários da própria org.
+ */
 app.put('/api/usuarios/:id', auth, exigirPapel('responsavel', 'admin_geral'), (req, res) => {
   const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
   if (!alvo) return res.status(404).json({ erro: 'Usuário não encontrado' });
@@ -332,6 +509,13 @@ app.put('/api/usuarios/:id', auth, exigirPapel('responsavel', 'admin_geral'), (r
   res.json({ ok: true });
 });
 
+/**
+ * DELETE /api/usuarios/:id — exclui usuário
+ * Impede:
+ *   - excluir a si mesmo
+ *   - excluir admin_geral
+ *   - responsável excluir usuário de outra org
+ */
 app.delete('/api/usuarios/:id', auth, exigirPapel('responsavel', 'admin_geral'), (req, res) => {
   const alvo = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
   if (!alvo) return res.status(404).json({ erro: 'Usuário não encontrado' });
@@ -344,7 +528,16 @@ app.delete('/api/usuarios/:id', auth, exigirPapel('responsavel', 'admin_geral'),
   res.json({ ok: true });
 });
 
-/* ============ EQUIPES ============ */
+
+// ============================================================
+// EQUIPES
+// ============================================================
+// Regras:
+//   - POST/PUT: admin geral NÃO pode (bloquearAdminGeral)
+//   - DELETE: só responsável
+//   - Todas as rotas respeitam isolamento por org_id
+// ============================================================
+
 app.get('/api/equipes', auth, (req, res) => {
   const orgId = req.user.papel === 'admin_geral'
     ? (req.query.orgId || req.user.org_id)
@@ -385,7 +578,15 @@ app.delete('/api/equipes/:id', auth, bloquearAdminGeral, exigirPapel('responsave
   res.json({ ok: true });
 });
 
-/* ============ JOGOS ============ */
+
+// ============================================================
+// JOGOS (formato "por posição")
+// ============================================================
+
+/**
+ * Converte uma linha da tabela `jogos` em um objeto "amigável"
+ * (faz o parse dos campos JSON).
+ */
 function mapJogo(row) {
   return {
     id: row.id, org_id: row.org_id, nome: row.nome, secreto: !!row.secreto,
@@ -426,6 +627,9 @@ app.put('/api/jogos/:id', auth, bloquearAdminGeral, (req, res) => {
   if (!exigirOrgPropria(req, j.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
   const { nome, posicoes, participantes, secreto } = req.body || {};
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
+
+  // Ao editar, limpamos resultados que apontam para posições ou equipes
+  // que não existem mais (evita "lixo" no banco).
   const novasPos = posicoes || JSON.parse(j.posicoes_json || '[]');
   const novosPart = participantes || JSON.parse(j.participantes_json || '[]');
   const idsPos = novasPos.map(p => p.id);
@@ -434,12 +638,20 @@ app.put('/api/jogos/:id', auth, bloquearAdminGeral, (req, res) => {
   for (const k of Object.keys(resuAntigo)) {
     if (novosPart.includes(k) && idsPos.includes(resuAntigo[k])) resuFinal[k] = resuAntigo[k];
   }
+
   db.prepare(`UPDATE jogos SET nome=?, posicoes_json=?, participantes_json=?, resultados_json=?, secreto=? WHERE id=?`)
     .run(nome.trim(), JSON.stringify(novasPos), JSON.stringify(novosPart),
          JSON.stringify(resuFinal), secreto ? 1 : 0, req.params.id);
   res.json(mapJogo(db.prepare('SELECT * FROM jogos WHERE id = ?').get(req.params.id)));
 });
 
+/**
+ * PUT /api/jogos/:id/resultados
+ * ------------------------------------------------------------
+ * Grava o placar (posição de cada equipe).
+ * Body: { resultados: { equipeId: posicaoId } }
+ * Registra a alteração na auditoria (com valores antes/depois).
+ */
 app.put('/api/jogos/:id/resultados', auth, bloquearAdminGeral, (req, res) => {
   const j = db.prepare('SELECT * FROM jogos WHERE id = ?').get(req.params.id);
   if (!j) return res.status(404).json({ erro: 'Jogo não encontrado' });
@@ -461,6 +673,7 @@ app.put('/api/jogos/:id/resultados', auth, bloquearAdminGeral, (req, res) => {
   res.json({ ok: true });
 });
 
+// Revelar um jogo secreto individualmente
 app.put('/api/jogos/:id/revelar', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
   const j = db.prepare('SELECT * FROM jogos WHERE id = ?').get(req.params.id);
   if (!j) return res.status(404).json({ erro: 'Jogo não encontrado' });
@@ -469,6 +682,7 @@ app.put('/api/jogos/:id/revelar', auth, bloquearAdminGeral, exigirPapel('respons
   res.json({ ok: true });
 });
 
+// Revelar TODOS os jogos secretos da org de uma vez
 app.put('/api/jogos/revelar-todos', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
   const orgId = req.user.papel === 'admin_geral' ? (req.body.orgId || req.user.org_id) : req.user.org_id;
   if (!orgId) return res.status(400).json({ erro: 'Organização não definida' });
@@ -476,7 +690,7 @@ app.put('/api/jogos/revelar-todos', auth, bloquearAdminGeral, exigirPapel('respo
   res.json({ ok: true, revelados: r.changes });
 });
 
-	app.delete('/api/jogos/:id', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
+app.delete('/api/jogos/:id', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
   const j = db.prepare('SELECT * FROM jogos WHERE id = ?').get(req.params.id);
   if (!j) return res.status(404).json({ erro: 'Jogo não encontrado' });
   if (!exigirOrgPropria(req, j.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
@@ -484,7 +698,12 @@ app.put('/api/jogos/revelar-todos', auth, bloquearAdminGeral, exigirPapel('respo
   res.json({ ok: true });
 });
 
-/* ============ PENALIDADES ============ */
+
+// ============================================================
+// PENALIDADES
+// ============================================================
+// Pontos sempre positivos (o frontend exibe com sinal "−").
+
 app.get('/api/penalidades', auth, (req, res) => {
   const orgId = req.user.papel === 'admin_geral'
     ? (req.query.orgId || req.user.org_id)
@@ -500,6 +719,7 @@ app.post('/api/penalidades', auth, bloquearAdminGeral, (req, res) => {
   if (!orgId) return res.status(400).json({ erro: 'Organização não definida' });
   const { equipeId, motivo, pontos } = req.body || {};
   if (!equipeId || !motivo) return res.status(400).json({ erro: 'Equipe e motivo são obrigatórios' });
+  // Valida que a equipe existe e é da mesma org
   const eq = db.prepare('SELECT id FROM equipes WHERE id = ? AND org_id = ?').get(equipeId, orgId);
   if (!eq) return res.status(400).json({ erro: 'Equipe inválida' });
   const id = uid();
@@ -529,7 +749,14 @@ app.delete('/api/penalidades/:id', auth, exigirPapel('responsavel', 'admin_geral
   res.json({ ok: true });
 });
 
-/* ============ COMPETIÇÕES (Mata-Mata) ============ */
+
+// ============================================================
+// COMPETIÇÕES — helpers, geração de chaves e CRUD
+// ============================================================
+
+/**
+ * Converte uma linha de `competicoes_partidas` em objeto amigável.
+ */
 function mapPartida(row) {
   return {
     id: row.id,
@@ -545,6 +772,10 @@ function mapPartida(row) {
   };
 }
 
+/**
+ * Converte uma linha de `competicoes` em objeto amigável.
+ * Faz o parse do `config_json` (que guarda nº de grupos, pontos etc).
+ */
 function mapCompeticao(row, partidas) {
   let cfg = {};
   try { cfg = JSON.parse(row.config_json || '{}'); } catch {}
@@ -565,8 +796,18 @@ function mapCompeticao(row, partidas) {
   };
 }
 
+/**
+ * `gerarChave(equipesIds)` — geração de chave mata-mata
+ * ------------------------------------------------------------
+ * 1. Embaralha as equipes (Fisher-Yates)
+ * 2. Na primeira rodada, pareia 2 a 2 na ordem
+ * 3. Se o número for ímpar, o último ganha um "bye" (vencedor automático)
+ * 4. Cria as rodadas seguintes vazias (semi, final...)
+ * 5. Adiciona 1 partida extra para a disputa de 3º lugar
+ */
 function gerarChave(equipesIds) {
   const arr = [...equipesIds];
+  // Fisher-Yates shuffle
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -579,28 +820,37 @@ function gerarChave(equipesIds) {
     for (let i = 0; i < qtd; i++) {
       const a = timesRodada[i * 2] || '';
       const b = timesRodada[i * 2 + 1] || '';
+      // Se só tem um time, ele já é o vencedor (bye)
       const venc = (a && !b) ? a : (!a && b) ? b : '';
       todas.push({ rodada, posicao: i, equipe_a: a, equipe_b: b, vencedor: venc, is_terceiro: 0 });
     }
     timesRodada = new Array(qtd).fill('');
     rodada++;
   }
+  // Disputa de 3º lugar (só se tiver pelo menos 4 equipes)
   if (arr.length >= 4) {
     todas.push({ rodada, posicao: 0, equipe_a: '', equipe_b: '', vencedor: '', is_terceiro: 1 });
   }
   return todas;
 }
 
-/* ============================================================
-   FASE DE GRUPOS — geração, classificação e mata-mata
-   ============================================================ */
 
+// ============================================================
+// FASE DE GRUPOS — geração, classificação e mata-mata
+// ============================================================
+
+// Letras usadas para nomear os grupos: A, B, C, D...
 const LETRAS_GRUPO = 'ABCDEFGHIJKLMNOP'.split('');
 
-/* Distribui times em grupos, round-robin (equilibra tamanhos) */
+/**
+ * `distribuirGrupos(equipes, numGrupos)` — sorteio dos grupos
+ * ------------------------------------------------------------
+ * Embaralha as equipes e distribui round-robin (A, B, C, A, B, C...)
+ * para que os grupos fiquem com tamanhos equilibrados.
+ */
 function distribuirGrupos(equipes, numGrupos) {
   const arr = [...equipes];
-  // Fisher-Yates shuffle
+  // Fisher-Yates
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -610,7 +860,14 @@ function distribuirGrupos(equipes, numGrupos) {
   return grupos;
 }
 
-/* Gera todos-contra-todos de um grupo (método do círculo) */
+/**
+ * `gerarRoundRobin(equipes)` — todos contra todos
+ * ------------------------------------------------------------
+ * Implementa o "método do círculo" (rotação):
+ *   - Fase 1: fixa 1 time, os outros rotacionam
+ *   - Se nº de times for ímpar, adiciona null (bye) para fechar par
+ *   - Retorna lista de rodadas, cada rodada com os confrontos dela
+ */
 function gerarRoundRobin(equipes) {
   const list = [...equipes];
   if (list.length % 2 === 1) list.push(null); // bye
@@ -624,12 +881,13 @@ function gerarRoundRobin(equipes) {
       const a = list[i];
       const b = list[n - 1 - i];
       if (a !== null && b !== null) {
+        // Alterna mando de campo a cada rodada
         matches.push(r % 2 === 0 ? { a, b } : { a: b, b: a });
       }
     }
     rounds.push(matches);
 
-    // rotaciona mantendo o primeiro fixo
+    // Rotaciona: mantém o primeiro fixo, gira o resto
     const fixed = list[0];
     const rest = list.slice(1);
     rest.unshift(rest.pop());
@@ -639,7 +897,20 @@ function gerarRoundRobin(equipes) {
   return rounds;
 }
 
-/* Calcula a classificação de um grupo a partir das partidas */
+/**
+ * `calcularClassificacaoGrupo(equipesGrupo, partidas, cfg)` 
+ * ------------------------------------------------------------
+ * Calcula a tabela de um grupo:
+ *   P  = partidas jogadas
+ *   V  = vitórias
+ *   E  = empates
+ *   D  = derrotas
+ *   GP = gols pró
+ *   GC = gols contra
+ *   SG = saldo de gols
+ *   PTS = pontos (V × pontosVitoria + E × pontosEmpate)
+ * Ordena por: PTS ↓ | SG ↓ | GP ↓ | nome
+ */
 function calcularClassificacaoGrupo(equipesGrupo, partidasGrupo, cfg) {
   const ptsV = Number(cfg.pontosVitoria) || 3;
   const ptsE = Number(cfg.pontosEmpate) || 1;
@@ -650,6 +921,7 @@ function calcularClassificacaoGrupo(equipesGrupo, partidasGrupo, cfg) {
   }));
 
   partidasGrupo.forEach(p => {
+    // Ignora partidas sem placar lançado ou sem os dois times
     if (!p.equipe_a || !p.equipe_b) return;
     if (p.gols_a === null || p.gols_b === null || p.gols_a === undefined || p.gols_b === undefined) return;
     const a = mapa.get(p.equipe_a);
@@ -674,10 +946,18 @@ function calcularClassificacaoGrupo(equipesGrupo, partidasGrupo, cfg) {
   );
 }
 
-/* Monta os confrontos iniciais do mata-mata a partir dos classificados.
-   Se o número não for potência de 2, preenche com byes. */
+/**
+ * `gerarPrimeiraRodadaMataMata(classificados, ...)` 
+ * ------------------------------------------------------------
+ * A partir dos classificados dos grupos, monta os confrontos
+ * da primeira rodada do mata-mata.
+ *
+ * Ordenação tipo Copa: 1ºA, 1ºB, 2ºA, 2ºB...
+ *   → 1ºA × último, 2º × penúltimo, etc.
+ * Se o número não for potência de 2, completa com nulls (byes).
+ */
 function gerarPrimeiraRodadaMataMata(classificados, numGrupos, classificadosPorGrupo) {
-  // Ordena: 1ºA, 1ºB, 2ºA, 2ºB, ... (primeiro os 1ºs, depois os 2ºs, etc.)
+  // Ordena: 1ºA, 1ºB, 2ºA, 2ºB, ... (primeiro os 1ºs, depois os 2ºs)
   const porPos = [];
   for (let pos = 1; pos <= classificadosPorGrupo; pos++) {
     for (let g = 0; g < numGrupos; g++) {
@@ -687,11 +967,11 @@ function gerarPrimeiraRodadaMataMata(classificados, numGrupos, classificadosPorG
   }
 
   const n = porPos.length;
-  // Próxima potência de 2 ≥ n
+  // Próxima potência de 2 ≥ n (para saber quantos slots teremos)
   let pot2 = 1;
   while (pot2 < n) pot2 *= 2;
 
-  // Completa com nulls (byes) para chegar em pot2
+  // Completa com nulls (byes) até chegar em pot2
   const slots = [...porPos];
   while (slots.length < pot2) slots.push(null);
 
@@ -704,11 +984,24 @@ function gerarPrimeiraRodadaMataMata(classificados, numGrupos, classificadosPorG
 }
 
 
+/**
+ * `recomputarChave(partidasTodas)` — recalcula toda a árvore
+ * ------------------------------------------------------------
+ * É o coração do sistema de chaves. Faz:
+ *   1. Filtra apenas partidas do mata-mata (grupo === '')
+ *   2. Para cada rodada, propaga os vencedores da rodada anterior
+ *   3. Valida byes estruturais (times sozinhos avançam sozinhos)
+ *   4. Limpa vencedores inválidos (times que não estão mais na partida)
+ *   5. Calcula os perdedores das semifinais para a disputa de 3º
+ *
+ * Chamado sempre que um vencedor é clicado no frontend.
+ */
 function recomputarChave(partidasTodas) {
-  const partidas = partidasTodas.filter(p => !p.grupo);
+  const partidas = partidasTodas.filter(p => !p.grupo);            // só mata-mata
   const principais = partidas.filter(p => !p.is_terceiro);
   const terceiro = partidas.find(p => p.is_terceiro);
 
+  // Agrupa por rodada e ordena por posição
   const porRodada = {};
   principais.forEach(p => {
     if (!porRodada[p.rodada]) porRodada[p.rodada] = [];
@@ -717,12 +1010,12 @@ function recomputarChave(partidasTodas) {
   const rodadas = Object.keys(porRodada).map(Number).sort((a, b) => a - b);
   rodadas.forEach(r => porRodada[r].sort((a, b) => a.posicao - b.posicao));
 
-  // Loop rodada a rodada, propagando e validando SEM resetar nada de antemão
+  // Loop rodada a rodada, propagando vencedores
   for (let i = 0; i < rodadas.length; i++) {
     const matchups = porRodada[rodadas[i]];
     const prevLen = i > 0 ? porRodada[rodadas[i - 1]].length : 0;
 
-    // 1. Se i > 0, propaga os vencedores da rodada anterior para esta
+    // 1. Propaga os vencedores da rodada anterior para esta
     if (i > 0) {
       const anteriores = porRodada[rodadas[i - 1]];
       matchups.forEach(m => {
@@ -739,7 +1032,7 @@ function recomputarChave(partidasTodas) {
         m.equipe_a = time0;
         m.equipe_b = time1;
 
-        // Só limpa o vencedor se algum dos times realmente mudou
+        // Se algum dos times mudou, o vencedor antigo não vale mais
         if (antigoA !== m.equipe_a || antigoB !== m.equipe_b) {
           m.vencedor = '';
         }
@@ -751,32 +1044,36 @@ function recomputarChave(partidasTodas) {
       const isLast = idx === matchups.length - 1;
       let isBye = false;
       if (i === 0) {
+        // Rodada 1: bye se só tem um time definido
         isBye = (!!m.equipe_a) !== (!!m.equipe_b);
       } else {
+        // Rodadas 2+: bye só se a anterior teve nº ímpar de partidas
+        // e essa é a última partida da rodada
         isBye = (prevLen % 2 === 1) && isLast;
       }
 
       if (isBye) {
-        // Bye estrutural: único time avança automaticamente
+        // Bye estrutural: o único time avança automaticamente
         if (m.equipe_a && !m.equipe_b) m.vencedor = m.equipe_a;
         else if (!m.equipe_a && m.equipe_b) m.vencedor = m.equipe_b;
       } else {
-        // Se faltam times, não pode ter vencedor
+        // Sem os 2 times definidos → não pode ter vencedor
         if (!m.equipe_a || !m.equipe_b) {
           m.vencedor = '';
         }
-        // Se o vencedor não é um dos dois times, limpa
+        // Se o vencedor atual não está na partida, limpa
         if (m.vencedor && m.vencedor !== m.equipe_a && m.vencedor !== m.equipe_b) {
           m.vencedor = '';
         }
       }
+      // Sem nenhum time = sem vencedor
       if (!m.equipe_a && !m.equipe_b) m.vencedor = '';
     });
   }
 
-  // 3. Disputa de 3º lugar (perdedores das semifinais)
+  // 3. Disputa de 3º lugar = perdedores das semifinais
   if (terceiro && rodadas.length >= 2) {
-    const semiR = rodadas[rodadas.length - 2];
+    const semiR = rodadas[rodadas.length - 2];      // penúltima rodada
     const semis = porRodada[semiR];
     let perd1 = '', perd2 = '';
     if (semis[0] && semis[0].vencedor && semis[0].equipe_a && semis[0].equipe_b) {
@@ -790,10 +1087,12 @@ function recomputarChave(partidasTodas) {
     terceiro.equipe_a = perd1;
     terceiro.equipe_b = perd2;
 
+    // Se o vencedor antigo não é mais válido, limpa
     if (oldA !== perd1 || oldB !== perd2) terceiro.vencedor = '';
     if (terceiro.vencedor && terceiro.vencedor !== perd1 && terceiro.vencedor !== perd2) {
       terceiro.vencedor = '';
     }
+    // Auto-premiação: se só há um time (semifinal foi bye), ele é o 3º
     if (!terceiro.vencedor) {
       if (perd1 && !perd2) terceiro.vencedor = perd1;
       else if (!perd1 && perd2) terceiro.vencedor = perd2;
@@ -803,6 +1102,18 @@ function recomputarChave(partidasTodas) {
   return partidasTodas;
 }
 
+
+// ============================================================
+// CRUD DE COMPETIÇÕES
+// ============================================================
+
+/**
+ * GET /api/competicoes
+ * ------------------------------------------------------------
+ * Lista todas as competições da org, já com:
+ *   - partidas carregadas e mapeadas
+ *   - grupos calculados (se for grupos_mata_mata)
+ */
 app.get('/api/competicoes', auth, (req, res) => {
   const orgId = req.user.papel === 'admin_geral'
     ? (req.query.orgId || req.user.org_id)
@@ -839,6 +1150,14 @@ app.get('/api/competicoes', auth, (req, res) => {
   res.json(resultado);
 });
 
+/**
+ * POST /api/competicoes
+ * ------------------------------------------------------------
+ * Cria uma competição. Comporta-se diferente por tipo:
+ *   - mata_mata: gera chave completa na hora
+ *   - grupos_mata_mata: distribui em grupos e gera todos-contra-todos
+ *     (o mata-mata é gerado depois, quando o usuário clicar no botão)
+ */
 app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
   const {
     nome, tipo = 'mata_mata', equipes, pontos1, pontos2, pontos3, secreto,
@@ -858,6 +1177,7 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
   const tipoFinal = tipo === 'grupos_mata_mata' ? 'grupos_mata_mata' : 'mata_mata';
 
   if (tipoFinal === 'mata_mata') {
+    // ----- MATA-MATA SIMPLES -----
     const partidas = gerarChave(equipes);
     const tx = db.transaction(() => {
       db.prepare(`INSERT INTO competicoes (id, org_id, nome, tipo, secreto, equipes_json, pontos_1, pontos_2, pontos_3, config_json)
@@ -871,7 +1191,7 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
     });
     tx();
   } else {
-    // Grupos + Mata-Mata
+    // ----- GRUPOS + MATA-MATA -----
     const nG = Math.max(2, Math.min(8, Number(numGrupos) || 2));
     const cPG = Math.max(1, Math.min(4, Number(classificadosPorGrupo) || 2));
     if (equipes.length < nG * 2) {
@@ -884,7 +1204,7 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
       pontosVitoria: Number(pontosVitoria) || 3,
       pontosEmpate: Number(pontosEmpate) || 1,
       gruposGerados: true,
-      mataMataGerado: false
+      mataMataGerado: false       // ← controla se o botão "gerar mata-mata" já foi usado
     };
 
     const tx = db.transaction(() => {
@@ -898,6 +1218,7 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
         (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo)
         VALUES (?, ?, ?, ?, ?, ?, '', 0, ?)`);
 
+      // Para cada grupo, gera os confrontos todos-contra-todos
       grupos.forEach((equipesGrupo, gi) => {
         const nomeGrupo = LETRAS_GRUPO[gi];
         const rounds = gerarRoundRobin(equipesGrupo);
@@ -916,6 +1237,10 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
   res.status(201).json(mapCompeticao(row, salvas));
 });
 
+/**
+ * PUT /api/competicoes/:id — atualiza nome, pontos e flag secreto
+ * Não altera o tipo nem as equipes.
+ */
 app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
   const { nome, pontos1, pontos2, pontos3, secreto } = req.body || {};
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
@@ -933,7 +1258,12 @@ app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
   res.json(mapCompeticao(row, salvas));
 });
 
-
+/**
+ * POST /api/competicoes/:id/gerar-chave
+ * ------------------------------------------------------------
+ * Usado apenas para o tipo mata_mata (botão "Regerar").
+ * Apaga todas as partidas atuais e gera nova chave do zero.
+ */
 app.post('/api/competicoes/:id/gerar-chave', auth, bloquearAdminGeral, (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
@@ -952,6 +1282,13 @@ app.post('/api/competicoes/:id/gerar-chave', auth, bloquearAdminGeral, (req, res
   res.json(salvas);
 });
 
+/**
+ * PUT /api/competicoes/:id/partidas/:pid/vencedor
+ * ------------------------------------------------------------
+ * Marca o vencedor de uma partida do mata-mata.
+ * Após gravar, chama recomputarChave() para propagar.
+ * Registra na auditoria.
+ */
 app.put('/api/competicoes/:id/partidas/:pid/vencedor', auth, bloquearAdminGeral, (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
@@ -964,11 +1301,13 @@ app.put('/api/competicoes/:id/partidas/:pid/vencedor', auth, bloquearAdminGeral,
 
   const antigoVenc = alvo.vencedor;
   alvo.vencedor = String(vencedor || '');
+
+  // Prepara dados para recomputar (incluindo grupo para filtrar)
   const mapeadas = partidas.map(x => ({
-  id: x.id, rodada: x.rodada, posicao: x.posicao,
-  equipe_a: x.equipe_a, equipe_b: x.equipe_b,
-  vencedor: x.vencedor, is_terceiro: x.is_terceiro,
-  grupo: x.grupo || ''
+    id: x.id, rodada: x.rodada, posicao: x.posicao,
+    equipe_a: x.equipe_a, equipe_b: x.equipe_b,
+    vencedor: x.vencedor, is_terceiro: x.is_terceiro,
+    grupo: x.grupo || ''
   }));
   recomputarChave(mapeadas);
 
@@ -991,6 +1330,7 @@ app.put('/api/competicoes/:id/partidas/:pid/vencedor', auth, bloquearAdminGeral,
   res.json(salvas);
 });
 
+// Revelar competição (tornar pública)
 app.put('/api/competicoes/:id/revelar', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
@@ -999,7 +1339,12 @@ app.put('/api/competicoes/:id/revelar', auth, bloquearAdminGeral, exigirPapel('r
   res.json({ ok: true });
 });
 
-/* === Salvar placar de uma partida de grupo === */
+/**
+ * PUT /api/competicoes/:id/partidas/:pid/placar
+ * ------------------------------------------------------------
+ * Grava o placar (gols) de uma partida de grupo.
+ * Só funciona se a partida tiver `grupo` preenchido.
+ */
 app.put('/api/competicoes/:id/partidas/:pid/placar', auth, bloquearAdminGeral, (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
@@ -1027,13 +1372,18 @@ app.put('/api/competicoes/:id/partidas/:pid/placar', auth, bloquearAdminGeral, (
   res.json(salvas);
 });
 
-/* === Sortear grupos novamente (só se nenhum placar lançado) === */
+/**
+ * POST /api/competicoes/:id/sortear-grupos
+ * ------------------------------------------------------------
+ * Refaz o sorteio dos grupos (só funciona se nenhum placar foi lançado).
+ */
 app.post('/api/competicoes/:id/sortear-grupos', auth, bloquearAdminGeral, (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
   if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
   if (c.tipo !== 'grupos_mata_mata') return res.status(400).json({ erro: 'Competição não é do tipo grupos + mata-mata' });
 
+  // Bloqueia se já houver placar
   const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ?').all(c.id);
   const temPlacar = partidas.some(p => p.gols_a !== null && p.gols_b !== null);
   if (temPlacar) return res.status(400).json({ erro: 'Já há placares lançados. Não é possível resortear.' });
@@ -1064,7 +1414,17 @@ app.post('/api/competicoes/:id/sortear-grupos', auth, bloquearAdminGeral, (req, 
   res.json(salvas);
 });
 
-/* === Gerar mata-mata depois dos grupos === */
+/**
+ * POST /api/competicoes/:id/gerar-mata-mata
+ * ------------------------------------------------------------
+ * Converte a fase de grupos em chaves eliminatórias:
+ *   1. Valida que TODOS os placares foram lançados
+ *   2. Calcula a classificação de cada grupo
+ *   3. Extrai os N melhores de cada grupo
+ *   4. Gera a primeira rodada do mata-mata + rodadas vazias
+ *   5. Adiciona a partida de 3º lugar
+ *   6. Marca mataMataGerado = true no config
+ */
 app.post('/api/competicoes/:id/gerar-mata-mata', auth, bloquearAdminGeral, (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
@@ -1074,6 +1434,7 @@ app.post('/api/competicoes/:id/gerar-mata-mata', auth, bloquearAdminGeral, (req,
   const cfg = JSON.parse(c.config_json || '{}');
   if (cfg.mataMataGerado) return res.status(400).json({ erro: 'Mata-mata já foi gerado' });
 
+  // Valida placares
   const todas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ?').all(c.id);
   const grupoMatches = todas.filter(p => p.grupo);
   const semPlacar = grupoMatches.filter(p => p.gols_a === null || p.gols_b === null);
@@ -1081,8 +1442,7 @@ app.post('/api/competicoes/:id/gerar-mata-mata', auth, bloquearAdminGeral, (req,
     return res.status(400).json({ erro: `Ainda faltam ${semPlacar.length} placar(es) de grupo` });
   }
 
-  // Classificação de cada grupo
-  const equipes = JSON.parse(c.equipes_json || '[]');
+  // Calcula classificação de cada grupo
   const grupos = {};
   grupoMatches.forEach(p => {
     if (!grupos[p.grupo]) grupos[p.grupo] = [];
@@ -1111,12 +1471,14 @@ app.post('/api/competicoes/:id/gerar-mata-mata', auth, bloquearAdminGeral, (req,
     // Apaga qualquer mata-mata anterior (grupo='')
     db.prepare("DELETE FROM competicoes_partidas WHERE competicao_id = ? AND grupo = ''").run(c.id);
 
-        const ins = db.prepare(`INSERT INTO competicoes_partidas
+    const ins = db.prepare(`INSERT INTO competicoes_partidas
       (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo)
       VALUES (?, ?, ?, ?, ?, ?, '', 0, ?)`);
+
+    // Primeira rodada (com os classificados)
     confrontos.forEach((cf, i) => ins.run(uid(), c.id, 1, i, cf.a || '', cf.b || '', ''));
 
-    // Cria as próximas rodadas (vazias)
+    // Rodadas seguintes (vazias)
     let n = confrontos.length;
     let r = 2;
     while (n > 1) {
@@ -1126,7 +1488,7 @@ app.post('/api/competicoes/:id/gerar-mata-mata', auth, bloquearAdminGeral, (req,
       }
       r++;
     }
-    // 3º lugar
+    // Partida de 3º lugar
     if (confrontos.length >= 2) {
       ins.run(uid(), c.id, r, 0, '', '', '');
       const ultima = db.prepare("SELECT id FROM competicoes_partidas WHERE competicao_id=? AND grupo='' ORDER BY rowid DESC LIMIT 1").get(c.id);
@@ -1142,6 +1504,7 @@ app.post('/api/competicoes/:id/gerar-mata-mata', auth, bloquearAdminGeral, (req,
   res.json(salvas);
 });
 
+// Excluir competição (só responsável, cascade apaga partidas)
 app.delete('/api/competicoes/:id', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
   const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
@@ -1150,7 +1513,19 @@ app.delete('/api/competicoes/:id', auth, bloquearAdminGeral, exigirPapel('respon
   res.json({ ok: true });
 });
 
-/* ============ AUDITORIA ============ */
+
+// ============================================================
+// AUDITORIA
+// ============================================================
+
+/**
+ * GET /api/auditoria
+ * ------------------------------------------------------------
+ * Lista os registros de auditoria da org.
+ * Suporta filtros opcionais via query string:
+ *   ?usuario=Nome  ?entidade=jogo  ?de=YYYY-MM-DD  ?ate=YYYY-MM-DD
+ * Limite fixo de 500 registros mais recentes.
+ */
 app.get('/api/auditoria', auth, exigirPapel('responsavel', 'admin_geral'), (req, res) => {
   const orgId = req.user.papel === 'admin_geral'
     ? (req.query.orgId || req.user.org_id)
@@ -1166,7 +1541,10 @@ app.get('/api/auditoria', auth, exigirPapel('responsavel', 'admin_geral'), (req,
   res.json(db.prepare(sql).all(...params));
 });
 
-/* ============ CLASSIFICAÇÃO ============ */
+
+// ============================================================
+// CLASSIFICAÇÃO GERAL (usada pelo admin para ver o ranking)
+// ============================================================
 app.get('/api/classificacao', auth, (req, res) => {
   const orgId = req.user.papel === 'admin_geral'
     ? (req.query.orgId || req.user.org_id)
@@ -1181,6 +1559,7 @@ app.get('/api/classificacao', auth, (req, res) => {
   const mapa = new Map();
   equipes.forEach(e => mapa.set(e.id, { equipe: e, pontos: 0, penal: 0, jogos: 0 }));
 
+  // Soma pontos dos jogos por posição
   jogos.forEach(j => {
     (j.participantes || []).forEach(eid => {
       const item = mapa.get(eid);
@@ -1192,7 +1571,8 @@ app.get('/api/classificacao', auth, (req, res) => {
     });
   });
 
-    competicoes.forEach(c => {
+  // Soma pontos das competições (só partidas do mata-mata)
+  competicoes.forEach(c => {
     const pts = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ?').all(c.id).map(mapPartida);
     const principais = pts.filter(p => !p.isTerceiro && !p.grupo);
     const terc = pts.find(p => p.isTerceiro && !p.grupo);
@@ -1211,6 +1591,7 @@ app.get('/api/classificacao', auth, (req, res) => {
     }
   });
 
+  // Subtrai penalidades
   penalidades.forEach(p => {
     const item = mapa.get(p.equipe_id);
     if (item) item.penal += Number(p.pontos) || 0;
@@ -1222,10 +1603,26 @@ app.get('/api/classificacao', auth, (req, res) => {
   res.json(lista);
 });
 
-/* ============ FALLBACK SPA ============ */
+
+// ============================================================
+// FALLBACK SPA
+// ------------------------------------------------------------
+// IMPORTANTE: essas rotas PRECISAM vir depois de todas as rotas
+// /api/*, senão o Express vai interceptar as chamadas de API.
+//
+// - /admin     → serve o painel de administração
+// - qualquer outra rota → serve a tela pública
+// ============================================================
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+
+// ============================================================
+// INICIALIZAÇÃO DO SERVIDOR
+// ------------------------------------------------------------
+// Escuta em 0.0.0.0 para aceitar conexões de qualquer IP
+// (necessário para funcionar dentro de containers).
+// ============================================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌱 CompAct Jr. rodando em http://0.0.0.0:${PORT}`);
 });

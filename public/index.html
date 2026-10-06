@@ -6,8 +6,18 @@
 <meta name="theme-color" content="#0ea5e9" />
 <title>CompAct Jr. — Acompanhe os campeonatos</title>
 <style>
+  /* ============================================================
+     RESET BÁSICO
+     ============================================================ */
   *,*::before,*::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-    :root{
+
+  /* ============================================================
+     VARIÁVEIS GLOBAIS (TEMA CLARO)
+     ------------------------------------------------------------
+     Tudo que usa cor no CSS vem daqui. Alterar uma variável
+     atualiza o sistema inteiro.
+     ============================================================ */
+  :root{
     --prim:#6366f1; --prim-esc:#4338ca; --prim-cla:#e0e7ff;
     --acen:#f472b6;
     --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
@@ -18,7 +28,15 @@
     --sombra-forte:0 8px 24px rgba(15,23,42,.12);
     --r:16px; --r-sm:10px;
   }
-    @media (prefers-color-scheme: dark){
+
+  /* ============================================================
+     TEMA ESCURO — segue o sistema operacional
+     ------------------------------------------------------------
+     Aplica as variáveis escuras SÓ se:
+       - o usuário não forçou "light" via botão, E
+       - o sistema operacional está em modo escuro
+     ============================================================ */
+  @media (prefers-color-scheme: dark){
     :root:not([data-tema="light"]){
       --bg:#0f172a; --bg-2:#1e293b; --bg-3:#0b1220;
       --txt:#f1f5f9; --txt-2:#cbd5e1; --txt-3:#94a3b8;
@@ -28,6 +46,10 @@
       --sombra-forte:0 8px 24px rgba(0,0,0,.5);
     }
   }
+
+  /* ============================================================
+     TEMA ESCURO FORÇADO pelo usuário (via botão)
+     ============================================================ */
   :root[data-tema="dark"]{
     --bg:#0f172a; --bg-2:#1e293b; --bg-3:#0b1220;
     --txt:#f1f5f9; --txt-2:#cbd5e1; --txt-3:#94a3b8;
@@ -36,6 +58,10 @@
     --sombra:0 2px 8px rgba(0,0,0,.3);
     --sombra-forte:0 8px 24px rgba(0,0,0,.5);
   }
+
+  /* ============================================================
+     LAYOUT BASE
+     ============================================================ */
   html,body{margin:0;padding:0}
   body{
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -46,7 +72,9 @@
   }
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 
-  /* Header */
+  /* ============================================================
+     HEADER (barra superior fixa)
+     ============================================================ */
   .hdr{
     position:sticky;top:0;z-index:50;
     background:var(--bg-2);
@@ -64,17 +92,21 @@
   }
   .brand-sub{font-size:11px;color:var(--txt-3);font-weight:500;display:block;margin-top:1px}
 
-  /* Container */
+  /* ============================================================
+     CONTAINER E HERO
+     ============================================================ */
   .wrap{max-width:720px;margin:0 auto;padding:20px 16px 40px}
 
-  /* Hero */
   .hero{margin-bottom:24px;padding:24px 4px}
   .hero h1{margin:0 0 6px;font-size:26px;font-weight:800;letter-spacing:-.6px;line-height:1.15}
   .hero p{margin:0;color:var(--txt-2);font-size:14.5px}
 
-  /* Grid de orgs */
+  /* ============================================================
+     GRID DE ORGANIZAÇÕES (cards da home)
+     ============================================================ */
   .grid{display:grid;grid-template-columns:1fr;gap:12px}
   @media(min-width:520px){.grid{grid-template-columns:1fr 1fr}}
+
   .org-card{
     background:var(--bg-2);border:1px solid var(--borda);border-radius:var(--r);
     padding:18px;display:flex;align-items:center;gap:14px;
@@ -84,6 +116,8 @@
   }
   .org-card:active{transform:scale(.98)}
   @media(hover:hover){.org-card:hover{box-shadow:var(--sombra-forte);border-color:var(--prim)}}
+
+  /* Avatar da organização (usa a cor custom da org via --org-cor) */
   .org-emoji{
     width:52px;height:52px;border-radius:14px;
     display:grid;place-items:center;font-size:26px;
@@ -97,7 +131,9 @@
   .org-arrow{color:var(--txt-3);font-size:20px;transition:transform .2s}
   .org-card:hover .org-arrow{transform:translateX(3px);color:var(--prim)}
 
-  /* Estado vazio / carregando */
+  /* ============================================================
+     ESTADOS VAZIOS E SPINNER DE CARREGAMENTO
+     ============================================================ */
   .empty{text-align:center;padding:50px 20px;color:var(--txt-3)}
   .empty-icon{font-size:48px;margin-bottom:12px;opacity:.6}
   .spinner{
@@ -107,7 +143,9 @@
   }
   @keyframes spin{to{transform:rotate(360deg)}}
 
-  /* Voltar */
+  /* ============================================================
+     BOTÃO VOLTAR
+     ============================================================ */
   .voltar{
     display:inline-flex;align-items:center;gap:6px;
     padding:10px 14px;border-radius:10px;
@@ -118,7 +156,9 @@
   .voltar:active{background:var(--prim-cla)}
   .voltar span{font-size:18px;line-height:1}
 
-  /* Header da org */
+  /* ============================================================
+     HEADER DA ORGANIZAÇÃO (faixa colorida com nome + emoji)
+     ============================================================ */
   .org-hdr{
     background:linear-gradient(135deg, var(--org-cor, var(--prim)), color-mix(in srgb, var(--org-cor, var(--prim)) 55%, black));
     border-radius:var(--r);padding:22px;
@@ -140,20 +180,25 @@
   .org-hdr-info h2{margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-.4px}
   .org-hdr-info p{margin:0;font-size:13px;opacity:.9}
 
-  /* Section title */
+  /* ============================================================
+     TÍTULOS DE SEÇÃO (🏅 Classificação, 🎮 Jogos, 🏆 Mata-Mata)
+     ============================================================ */
   .sec-title{
     font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
     color:var(--txt-3);margin:24px 0 12px;display:flex;align-items:center;gap:8px;
   }
   .sec-title:first-child{margin-top:0}
 
-  /* Card de posição (equipe) */
+  /* ============================================================
+     CARDS DE POSIÇÃO (classificação por equipe)
+     ============================================================ */
   .pos-list{display:flex;flex-direction:column;gap:10px}
   .pos-card{
     background:var(--bg-2);border:1px solid var(--borda);border-radius:var(--r-sm);
     padding:14px 16px;display:flex;align-items:center;gap:14px;
     box-shadow:var(--sombra);
   }
+  /* Card do 1º lugar (destaque em gradiente) */
   .pos-card.destaque{
     background:linear-gradient(135deg, var(--prim), var(--acen));
     color:#fff;border:none;
@@ -164,10 +209,10 @@
     background:var(--bg-3);color:var(--txt-2);flex-shrink:0;
   }
   .pos-card.destaque .pos-num{background:rgba(255,255,255,.25);color:#fff}
+  /* Cores de medalha nas 3 primeiras posições */
   .pos-card:nth-child(1) .pos-num{background:#fef3c7;color:#92400e}
   .pos-card:nth-child(2) .pos-num{background:#e2e8f0;color:#475569}
   .pos-card:nth-child(3) .pos-num{background:#fed7aa;color:#9a3412}
-  .pos-card.destaque .pos-num{background:rgba(255,255,255,.25);color:#fff}
   .pos-info{flex:1;min-width:0}
   .pos-nome{font-weight:700;font-size:15.5px;letter-spacing:-.2px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -179,7 +224,9 @@
   }
   .pos-card.destaque .pos-pts{color:#fff}
 
-  /* Card de jogo */
+  /* ============================================================
+     CARD DE JOGO (usado por Jogos e Competições)
+     ============================================================ */
   .jogo-card{
     background:var(--bg-2);border:1px solid var(--borda);border-radius:var(--r);
     padding:16px;box-shadow:var(--sombra);margin-bottom:10px;
@@ -205,7 +252,11 @@
     font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;
     background:var(--prim-cla);color:var(--prim-esc);flex-shrink:0;
   }
-    /* Chaves públicas (mata-mata) */
+  .jogo-tag.vazio{background:var(--bg-3);color:var(--txt-3)}
+
+  /* ============================================================
+     CHAVES DE MATA-MATA (fases, confrontos e times)
+     ============================================================ */
   .fase-tag{
     display:inline-block;background:var(--prim-cla);color:var(--prim-esc);
     font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;
@@ -220,13 +271,14 @@
     background:var(--bg-2);font-size:13px;font-weight:600;
     text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
+  /* Time vencedor aparece em roxo */
   .chave-time.venc{background:var(--prim);color:#fff;border-color:var(--prim-esc)}
   .chave-time.vazio{color:var(--txt-3);font-style:italic;font-weight:400}
   .chave-x{font-weight:700;color:var(--txt-3);padding:0 2px;font-size:12px}
 
-  .jogo-tag.vazio{background:var(--bg-3);color:var(--txt-3)}
-
-    /* Botão flutuante de tema */
+  /* ============================================================
+     BOTÃO FLUTUANTE DE TEMA (canto inferior esquerdo)
+     ============================================================ */
   .btn-tema{
     position:fixed;
     bottom:calc(24px + env(safe-area-inset-bottom));
@@ -246,7 +298,9 @@
   .btn-tema:active{transform:scale(.92)}
   @media(hover:hover){ .btn-tema:hover{border-color:var(--prim)} }
 
-  /* Toast */
+  /* ============================================================
+     TOAST (mensagem rápida na parte inferior)
+     ============================================================ */
   .toast{
     position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);
     background:var(--txt);color:var(--bg-2);padding:12px 20px;border-radius:12px;
@@ -258,6 +312,9 @@
 </head>
 <body>
 
+<!-- ============================================================
+     HEADER (fixo no topo)
+     ============================================================ -->
 <header class="hdr">
   <div class="brand">
     <div class="brand-icon">⚡</div>
@@ -268,30 +325,45 @@
   </div>
 </header>
 
+<!-- Container principal — o JavaScript preenche dinamicamente -->
 <main class="wrap" id="app"></main>
 
+<!-- Botão flutuante para alternar entre tema claro e escuro -->
 <button class="btn-tema" id="btnTema" onclick="alternarTema()" title="Alternar tema">🌙</button>
 
+<!-- Elemento do toast (mensagem rápida) -->
 <div class="toast" id="toast"></div>
 
 <script>
 /* ============================================================
    UTILITÁRIOS
    ============================================================ */
+
+// Atalho para document.querySelector
 const $ = (s, r = document) => r.querySelector(s);
+
+// Escapa HTML para evitar XSS ao inserir dados do usuário
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
   { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
 ));
 
 /* ============================================================
    TEMA CLARO / ESCURO
+   ------------------------------------------------------------
+   Regras:
+   - Se o usuário nunca clicou no botão, segue o SO
+   - Se clicou, a escolha fica salva no localStorage
+   - Limpar o localStorage volta a seguir o SO
    ============================================================ */
+
+/** Retorna "dark" ou "light" (o que está efetivamente aplicado) */
 function temaEfetivo() {
   const attr = document.documentElement.getAttribute('data-tema');
   if (attr === 'dark' || attr === 'light') return attr;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+/** Atualiza o ícone (☀️ ou 🌙) do botão flutuante */
 function atualizarIconeTema() {
   const btn = document.getElementById('btnTema');
   if (!btn) return;
@@ -300,6 +372,7 @@ function atualizarIconeTema() {
   btn.title = efetivo === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro';
 }
 
+/** Alterna entre claro e escuro (chamado pelo onclick do botão) */
 window.alternarTema = function() {
   const novo = temaEfetivo() === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-tema', novo);
@@ -307,17 +380,22 @@ window.alternarTema = function() {
   atualizarIconeTema();
 };
 
+/** Inicialização do tema ao carregar a página */
 (function initTema() {
   const salvo = localStorage.getItem('cj_tema');
   if (salvo === 'dark' || salvo === 'light') {
     document.documentElement.setAttribute('data-tema', salvo);
   }
+  // Atualiza o ícone se o SO mudar (só se o usuário não tiver escolhido)
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (!document.documentElement.getAttribute('data-tema')) atualizarIconeTema();
   });
   atualizarIconeTema();
 })();
 
+/* ============================================================
+   TOAST (notificação rápida)
+   ============================================================ */
 let toastTimer;
 function toast(msg) {
   const t = $('#toast');
@@ -328,7 +406,11 @@ function toast(msg) {
 }
 
 /* ============================================================
-   ROTEAMENTO SIMPLES POR HASH
+   ROTEAMENTO POR HASH
+   ------------------------------------------------------------
+   A URL usa hash pra navegar:
+     #/                → home (lista de organizações)
+     #/org/:slug       → página de uma organização
    ============================================================ */
 let rotaAtual = { tela: 'home', slug: null };
 
@@ -342,13 +424,16 @@ function parseHash() {
   }
 }
 
+// Quando o hash muda (usuário navega), re-renderiza
 window.addEventListener('hashchange', () => {
   parseHash();
   render();
 });
 
 /* ============================================================
-   API
+   API PÚBLICA
+   ------------------------------------------------------------
+   Só acessa rotas /api/publico/* — nenhuma requer login.
    ============================================================ */
 async function apiPublico(path) {
   const r = await fetch('/api/publico' + path);
@@ -357,7 +442,7 @@ async function apiPublico(path) {
 }
 
 /* ============================================================
-   TELA: HOME
+   TELA: HOME (lista de organizações)
    ============================================================ */
 async function renderHome() {
   const el = $('#app');
@@ -401,7 +486,12 @@ async function renderHome() {
 }
 
 /* ============================================================
-   TELA: ORG
+   TELA: ORG (página de uma organização)
+   ------------------------------------------------------------
+   Mostra:
+     - Classificação geral (cards de posição)
+     - Jogos (cards colapsáveis)
+     - Competições (mata-mata e grupos)
    ============================================================ */
 async function renderOrg(slug) {
   const el = $('#app');
@@ -412,14 +502,15 @@ async function renderOrg(slug) {
     const { org, equipes, jogos, competicoes } = data;
     const torneios = competicoes || [];
 
-    // Caches
+    // Cache global — usado por várias funções internas
     window._equipesCache = equipes;
     window._jogosCache = {};
     jogos.forEach(j => { window._jogosCache[j.id] = j; });
     window._competicoesCache = {};
     torneios.forEach(c => { window._competicoesCache[c.id] = c; });
 
-    // Inicializa os conjuntos de expandidos
+    // Inicializa os Sets que controlam quais cards estão expandidos.
+    // Resetam ao trocar de org.
     if (!window._jogosExpandidos || window._orgAtual !== slug) {
       window._jogosExpandidos = new Set();
       window._competicoesExpandidas = new Set();
@@ -432,9 +523,11 @@ async function renderOrg(slug) {
         <span>‹</span> Todos os campeonatos
       </button>
 
+      <!-- Header com cor/emoji/imagem da organização -->
       <div class="org-hdr" style="--org-cor:${esc(org.cor || '#6366f1')}">
         <div class="org-hdr-emoji" style="overflow:hidden;color:#fff;font-weight:800">
           ${org.imagem ? `<img src="${esc(org.imagem)}" alt="" style="width:100%;height:100%;object-fit:cover">` : esc((() => {
+            // Se não tem imagem, usa as 2 primeiras letras do nome
             const partes = String(org.nome).trim().split(/\s+/).filter(Boolean);
             if (!partes.length) return '?';
             if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
@@ -447,6 +540,7 @@ async function renderOrg(slug) {
         </div>
       </div>
 
+      <!-- ============ CLASSIFICAÇÃO ============ -->
       ${equipes.length ? `
         <div class="sec-title">🏅 Classificação</div>
         <div class="pos-list">
@@ -463,6 +557,7 @@ async function renderOrg(slug) {
         </div>
       ` : ''}
 
+      <!-- ============ JOGOS ============ -->
       ${jogos.length ? `
         <div class="sec-title">🎮 Jogos</div>
         ${jogos.map(j => {
@@ -493,6 +588,7 @@ async function renderOrg(slug) {
         }).join('')}
       ` : ''}
 
+      <!-- ============ MATA-MATA / GRUPOS ============ -->
       ${torneios.length ? `
         <div class="sec-title">🏆 Mata-Mata</div>
         ${torneios.map(c => {
@@ -523,6 +619,7 @@ async function renderOrg(slug) {
         }).join('')}
       ` : ''}
 
+      <!-- Estado vazio geral -->
       ${!equipes.length && !jogos.length && !torneios.length ? `
         <div class="empty"><div class="empty-icon">📋</div><p>Nada divulgado ainda.</p></div>
       ` : ''}
@@ -532,12 +629,18 @@ async function renderOrg(slug) {
     setTimeout(() => { location.hash = '#/'; }, 1500);
   }
 }
-/* Helper: renderiza o conteúdo interno do card expandido */
+
+/* ============================================================
+   RENDERIZAÇÃO INTERNA DO CARD DE JOGO
+   ------------------------------------------------------------
+   Mostra a lista de posições com a equipe que ficou em cada uma.
+   ============================================================ */
 function renderJogoCardInterno(j) {
   const posicoes = j.posicoes || [];
   const participantes = j.participantes || [];
   const resultados = j.resultados || {};
 
+  // Junta posição + equipe, e ordena por pontos (maior primeiro)
   const classificadas = participantes
     .map(eid => {
       const eq = (window._equipesCache || []).find(e => e.id === eid);
@@ -564,7 +667,12 @@ function renderJogoCardInterno(j) {
   `;
 }
 
-/* Toggle do card de jogo (versão pública) */
+/* ============================================================
+   TOGGLE DO CARD DE JOGO (expandir/recolher)
+   ------------------------------------------------------------
+   Não re-renderiza a página — só adiciona/remove o conteúdo
+   dentro do card. Assim o scroll não pula.
+   ============================================================ */
 window.toggleJogoPublico = function(id) {
   if (!window._jogosExpandidos) window._jogosExpandidos = new Set();
   if (!window._jogosCache) window._jogosCache = {};
@@ -576,12 +684,12 @@ window.toggleJogoPublico = function(id) {
   const conteudoExistente = card.querySelector('.jogo-conteudo');
 
   if (window._jogosExpandidos.has(id)) {
-    // === Colapsar ===
+    // Colapsar
     window._jogosExpandidos.delete(id);
     if (seta) seta.style.transform = '';
     if (conteudoExistente) conteudoExistente.remove();
   } else {
-    // === Expandir ===
+    // Expandir
     window._jogosExpandidos.add(id);
     if (seta) seta.style.transform = 'rotate(90deg)';
     const jogo = window._jogosCache[id];
@@ -595,7 +703,13 @@ window.toggleJogoPublico = function(id) {
   }
 };
 
-/* Calcula o pódio de uma competição (versão pública) */
+/* ============================================================
+   CÁLCULO DO PÓDIO DE UMA COMPETIÇÃO
+   ------------------------------------------------------------
+   1º = vencedor da final (maior rodada)
+   2º = perdedor da final
+   3º = vencedor da disputa de 3º
+   ============================================================ */
 function calcularPodioPublico(c) {
   const partidas = c.partidas || [];
   const nome = id => {
@@ -605,14 +719,14 @@ function calcularPodioPublico(c) {
 
   let primeiro = '—', segundo = '—', terceiro = '—';
 
-  // 3º lugar: só partidas de mata-mata (grupo === '') marcadas como isTerceiro
+  // 3º lugar: partida com isTerceiro=true e vencedor definido
   const terc = partidas.find(p => p.isTerceiro && !p.grupo && p.vencedor);
   if (terc) terceiro = nome(terc.vencedor);
 
-  // Mata-mata (sem grupo, sem terceiro)
+  // Mata-mata (sem grupo, sem ser 3º lugar)
   const matamata = partidas.filter(p => !p.grupo && !p.isTerceiro);
   if (matamata.length) {
-    // Maior rodada = final
+    // Final = partida de maior rodada
     let final = null;
     matamata.forEach(p => {
       if (!final || (Number(p.rodada) || 0) > (Number(final.rodada) || 0)) {
@@ -628,22 +742,25 @@ function calcularPodioPublico(c) {
   return { primeiro, segundo, terceiro };
 }
 
-/* Renderiza as chaves de uma competição (somente leitura) */
+/* ============================================================
+   RENDERIZA AS CHAVES DE UMA COMPETIÇÃO (somente leitura)
+   ------------------------------------------------------------
+   Estrutura:
+     - Fase de grupos (tabela + placares) — se for grupos_mata_mata
+     - Mata-mata: Semifinal → 3º Lugar → Final
+     - Pódio no final
+   ============================================================ */
 function renderChavesPublico(c) {
   const nomeEquipe = eid => {
     const e = (window._equipesCache || []).find(x => x.id === eid);
     return e ? e.nome : '—';
   };
 
+  // Siglas das colunas da tabela de grupo
   const SIGLAS = {
-    P: 'Partidas jogadas',
-    V: 'Vitórias',
-    E: 'Empates',
-    D: 'Derrotas',
-    GP: 'Gols Pró (marcados)',
-    GC: 'Gols Contra (sofridos)',
-    SG: 'Saldo de Gols',
-    PTS: 'Pontos'
+    P: 'Partidas jogadas', V: 'Vitórias', E: 'Empates', D: 'Derrotas',
+    GP: 'Gols Pró (marcados)', GC: 'Gols Contra (sofridos)',
+    SG: 'Saldo de Gols', PTS: 'Pontos'
   };
 
   let html = '';
@@ -652,7 +769,7 @@ function renderChavesPublico(c) {
   if (c.tipo === 'grupos_mata_mata' && c.grupos && c.grupos.length) {
     html += '<div style="margin-top:8px">';
     c.grupos.forEach(g => {
-      // Classificação
+      // Tabela de classificação
       const classifHTML = g.classificacao.map((cls, i) => {
         const eq = (window._equipesCache || []).find(e => e.id === cls.equipeId);
         const nome = eq ? eq.nome : '—';
@@ -672,7 +789,7 @@ function renderChavesPublico(c) {
           </tr>`;
       }).join('');
 
-      // Partidas com placar
+      // Partidas com placar destacando o vencedor em roxo
       const partidasHTML = g.partidas.map(p => {
         const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
         const nomeB = p.equipeB ? nomeEquipe(p.equipeB) : '—';
@@ -738,6 +855,7 @@ function renderChavesPublico(c) {
     const rodadas = Object.keys(porRodada).map(Number).sort((a, b) => a - b);
     const totalRodadas = rodadas.length;
 
+    // Nome amigável de cada fase
     const nomeRodada = r => {
       const faltam = totalRodadas - r;
       if (faltam === 0) return '🏆 Final';
@@ -747,6 +865,7 @@ function renderChavesPublico(c) {
       return `Rodada ${r}`;
     };
 
+    // Renderiza um confronto (com vencedor em roxo)
     const renderMatch = m => {
       const nomeA = m.equipeA ? nomeEquipe(m.equipeA) : '—';
       const nomeB = m.equipeB ? nomeEquipe(m.equipeB) : '—';
@@ -761,18 +880,18 @@ function renderChavesPublico(c) {
     };
 
     html += '<div style="margin-top:16px"></div>';
-    // Fases antes da final
+    // Fases antes da final (quartas, semis...)
     for (let i = 0; i < rodadas.length - 1; i++) {
       const r = rodadas[i];
       html += `<div class="fase-tag">${esc(nomeRodada(r))}</div>`;
       porRodada[r].sort((a, b) => a.posicao - b.posicao).forEach(m => html += renderMatch(m));
     }
-    // 3º lugar (antes da final)
+    // Disputa de 3º (antes da final)
     if (terceiro) {
       html += `<div class="fase-tag">🥉 3º Lugar</div>`;
       html += renderMatch(terceiro);
     }
-    // Final (por último)
+    // Final por último
     const rFinal = rodadas[rodadas.length - 1];
     html += `<div class="fase-tag">${esc(nomeRodada(rFinal))}</div>`;
     porRodada[rFinal].sort((a, b) => a.posicao - b.posicao).forEach(m => html += renderMatch(m));
@@ -804,7 +923,9 @@ function renderChavesPublico(c) {
   return html;
 }
 
-/* Toggle do card de competição (versão pública) */
+/* ============================================================
+   TOGGLE DO CARD DE COMPETIÇÃO
+   ============================================================ */
 window.toggleCompeticaoPublica = function(id) {
   if (!window._competicoesExpandidas) window._competicoesExpandidas = new Set();
   if (!window._competicoesCache) window._competicoesCache = {};
@@ -833,53 +954,15 @@ window.toggleCompeticaoPublica = function(id) {
   }
 };
 
-function renderJogoCard(j) {
-  const posicoes = j.posicoes || [];
-  const participantes = j.participantes || [];
-  const resultados = j.resultados || {};
-
-  // Só mostra equipes que JÁ têm posição definida
-  const classificadas = participantes
-    .map(eid => {
-      const eq = (window._equipesCache || []).find(e => e.id === eid);
-      if (!eq) return null;
-      const pid = resultados[eid];
-      const p = posicoes.find(x => x.id === pid);
-      return p ? { equipe: eq, posicao: p } : null;
-    })
-    .filter(Boolean)
-    // ordena por pontuação (maior primeiro) para ficar coerente com o pódio
-    .sort((a, b) => (b.posicao.pontos || 0) - (a.posicao.pontos || 0));
-
-  return `
-    <div class="jogo-card">
-      <div class="jogo-head">
-        <h3 class="jogo-nome">${esc(j.nome)}</h3>
-        <span class="jogo-badge">${classificadas.length} classificado${classificadas.length === 1 ? '' : 's'}</span>
-      </div>
-
-      ${posicoes.length ? `
-        <div class="jogo-posicoes">
-          ${posicoes.map(p => `<span class="chip">${esc(p.nome)} · ${p.pontos} pts</span>`).join('')}
-        </div>
-      ` : ''}
-
-      ${classificadas.length ? classificadas.map(({ equipe, posicao }) => `
-        <div class="jogo-resultado">
-          <span class="jogo-eq">${esc(equipe.nome)}</span>
-          <span class="jogo-tag">${esc(posicao.nome)} · ${posicao.pontos} pts</span>
-        </div>
-      `).join('') : '<p style="color:var(--txt-3);font-size:13px;margin:8px 0 0">Nenhum resultado divulgado ainda.</p>'}
-    </div>`;
-}
-
 /* ============================================================
-   RENDER
+   RENDER PRINCIPAL
+   ------------------------------------------------------------
+   Decide qual tela renderizar com base na rota (hash).
    ============================================================ */
 async function render() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (rotaAtual.tela === 'org') {
-    // Cache das equipes para os cards de jogo
+    // Guarda o cache de equipes (usado dentro dos cards)
     try {
       const data = await apiPublico('/orgs/' + encodeURIComponent(rotaAtual.slug));
       window._equipesCache = data.equipes;
@@ -891,7 +974,9 @@ async function render() {
 }
 
 /* ============================================================
-   INIT
+   INICIALIZAÇÃO
+   ------------------------------------------------------------
+   Lê o hash da URL e renderiza a tela correspondente.
    ============================================================ */
 parseHash();
 render();
