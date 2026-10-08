@@ -860,12 +860,18 @@ function renderEquipes(el) {
 }
 
 /* ---------- JOGOS ---------- */
+/* ---------- JOGOS ---------- */
 function renderJogos(el) {
   if (!state.jogosExpandidos) state.jogosExpandidos = new Set();
 
+  // Cópia ordenada alfabeticamente (não muta o state)
+  const jogos = [...state.jogos].sort((a, b) =>
+    a.nome.localeCompare(b.nome, 'pt-BR')
+  );
+
   el.innerHTML = `
-    <div class="sec-title">🎮 Jogos <span class="badge">${state.jogos.length}</span></div>
-    ${state.jogos.length ? state.jogos.map(j => {
+    <div class="sec-title">🎮 Jogos <span class="badge">${jogos.length}</span></div>
+    ${jogos.length ? jogos.map(j => {
       const posicoes = j.posicoes || [];
       const resultados = j.resultados || {};
       const expandido = state.jogosExpandidos.has(j.id);
@@ -927,6 +933,11 @@ function renderJogos(el) {
 function renderCompeticoes(el) {
   if (!state.competicoesExpandidas) state.competicoesExpandidas = new Set();
 
+  // Cópia ordenada alfabeticamente (não muta o state)
+  const competicoes = [...state.competicoes].sort((a, b) =>
+    a.nome.localeCompare(b.nome, 'pt-BR')
+  );
+
   // Helper: uma "pílula" de pódio, com cor por posição
   const pillPodio = (emoji, nome, bg, cor) => `
     <span style="display:inline-flex;align-items:center;gap:6px;
@@ -939,29 +950,26 @@ function renderCompeticoes(el) {
     </span>`;
 
   el.innerHTML = `
-    <div class="sec-title">🏆 Competições Mata-Mata <span class="badge">${state.competicoes.length}</span></div>
-    ${state.competicoes.length ? state.competicoes.map(c => {
+    <div class="sec-title">🏆 Competições Mata-Mata <span class="badge">${competicoes.length}</span></div>
+    ${competicoes.length ? competicoes.map(c => {
       const podio = calcularPodio(c);
       const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
       const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
 
-      // Considera "finalizado" também se o bloco final está marcado como tal
-      const temBlocoFinal = c.tipo === 'personalizado' && (c.blocos || []).some(b => b.ehFinal);
-
       return `
         <div class="card">
           <div class="card-head" style="margin-bottom:0">
-  <div style="flex:1;min-width:0">
-    <h3 class="card-title">
-      ${esc(c.nome)}
-      ${c.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
-      ${finalizada ? '<span class="tag tag-ok" style="margin-left:6px">Finalizado</span>' : ''}
-    </h3>
-    <div class="card-sub">${(c.equipes || []).length} equipes · ${(c.partidas || []).length} confrontos</div>
-    <div class="card-sub" style="margin-top:4px">🥇 ${c.pontos1} · 🥈 ${c.pontos2} · 🥉 ${c.pontos3}</div>
-    ${c.editado_por ? `<div class="card-sub" style="margin-top:6px;font-style:italic">Última edição por ${esc(c.editado_por)}</div>` : ''}
-  </div>
-</div>
+            <div style="flex:1;min-width:0">
+              <h3 class="card-title">
+                ${esc(c.nome)}
+                ${c.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
+                ${finalizada ? '<span class="tag tag-ok" style="margin-left:6px">Finalizado</span>' : ''}
+              </h3>
+              <div class="card-sub">${(c.equipes || []).length} equipes · ${(c.partidas || []).length} confrontos</div>
+              <div class="card-sub" style="margin-top:4px">🥇 ${c.pontos1} · 🥈 ${c.pontos2} · 🥉 ${c.pontos3}</div>
+              ${c.editado_por ? `<div class="card-sub" style="margin-top:6px;font-style:italic">Última edição por ${esc(c.editado_por)}</div>` : ''}
+            </div>
+          </div>
 
           ${temResultado ? `
             <div style="margin-top:14px;padding:10px 12px;background:var(--bg-3);border-radius:10px;
@@ -988,6 +996,7 @@ function renderCompeticoes(el) {
   fab.onclick = () => editarCompeticao(null);
   el.appendChild(fab);
 }
+
 /* ---------- MAIS ---------- */
 function renderMais(el) {
   // ============ MAIS DO ADMIN GERAL ============
