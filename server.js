@@ -281,27 +281,60 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
   });
 
   // 5. Soma pontos das competições (mata-mata e grupos)
-  competicoes.forEach(c => {
-    const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY rodada, posicao').all(c.id);
-    // Importante: filtrar !p.grupo para não confundir com partidas de grupo
-    const principais = partidas.filter(p => !p.is_terceiro && !p.grupo);
-    const terc = partidas.find(p => p.is_terceiro && !p.grupo);
-    if (!principais.length) return;
-    // A final é a partida de maior rodada que tem vencedor definido
-    const maxR = Math.max(...principais.map(p => p.rodada));
-    const final = principais.find(p => p.rodada === maxR && p.vencedor && p.equipe_a && p.equipe_b);
-    if (final) {
-      const perd = final.vencedor === final.equipe_a ? final.equipe_b : final.equipe_a;
-      const v = mapa.get(final.vencedor);
-      const p2 = mapa.get(perd);
-      if (v) v.pontos += Number(c.pontos_1) || 0;
-      if (p2) p2.pontos += Number(c.pontos_2) || 0;
+  // 5. Soma pontos das competições
+competicoes.forEach(c => {
+  const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY rodada, posicao').all(c.id);
+
+  // -------- Personalizado --------
+  if (c.tipo === 'personalizado') {
+    const blocos = db.prepare('SELECT * FROM competicoes_blocos WHERE competicao_id = ?').all(c.id);
+    const blocoFinal = blocos.find(b => b.eh_final);
+    const blocoTerceiro = blocos.find(b => b.eh_terceiro);
+
+    if (blocoFinal) {
+      const finais = partidas
+        .filter(p => p.bloco_id === blocoFinal.id && p.vencedor && p.equipe_a && p.equipe_b)
+        .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
+      const final = finais[0];
+      if (final) {
+        const perd = final.vencedor === final.equipe_a ? final.equipe_b : final.equipe_a;
+        const v = mapa.get(final.vencedor);
+        const p2 = mapa.get(perd);
+        if (v) v.pontos += Number(c.pontos_1) || 0;
+        if (p2) p2.pontos += Number(c.pontos_2) || 0;
+      }
     }
-    if (terc && terc.vencedor) {
-      const t3 = mapa.get(terc.vencedor);
-      if (t3) t3.pontos += Number(c.pontos_3) || 0;
+    if (blocoTerceiro) {
+      const terceiros = partidas
+        .filter(p => p.bloco_id === blocoTerceiro.id && p.vencedor)
+        .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
+      const terc = terceiros[0];
+      if (terc) {
+        const t3 = mapa.get(terc.vencedor);
+        if (t3) t3.pontos += Number(c.pontos_3) || 0;
+      }
     }
-  });
+    return;
+  }
+
+  // -------- Mata-mata e grupos + mata-mata --------
+  const principais = partidas.filter(p => !p.is_terceiro && !p.grupo);
+  const terc = partidas.find(p => p.is_terceiro && !p.grupo);
+  if (!principais.length) return;
+  const maxR = Math.max(...principais.map(p => p.rodada));
+  const final = principais.find(p => p.rodada === maxR && p.vencedor && p.equipe_a && p.equipe_b);
+  if (final) {
+    const perd = final.vencedor === final.equipe_a ? final.equipe_b : final.equipe_a;
+    const v = mapa.get(final.vencedor);
+    const p2 = mapa.get(perd);
+    if (v) v.pontos += Number(c.pontos_1) || 0;
+    if (p2) p2.pontos += Number(c.pontos_2) || 0;
+  }
+  if (terc && terc.vencedor) {
+    const t3 = mapa.get(terc.vencedor);
+    if (t3) t3.pontos += Number(c.pontos_3) || 0;
+  }
+});
 
   // 6. Subtrai as penalidades
   penalidades.forEach(p => {
@@ -326,16 +359,26 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
       resultados: JSON.parse(j.resultados_json || '{}')
     })),
     competicoes: competicoes.map(c => {
-      let cfg = {};
-      try { cfg = JSON.parse(c.config_json || '{}'); } catch {}
-      const todas = ptStmt.all(c.id).map(p => ({
-        id: p.id, rodada: p.rodada, posicao: p.posicao,
-        equipeA: p.equipe_a || '', equipeB: p.equipe_b || '',
-        vencedor: p.vencedor || '', isTerceiro: !!p.is_terceiro,
-        grupo: p.grupo || '',
-        golsA: (p.gols_a === null || p.gols_a === undefined) ? null : p.gols_a,
-        golsB: (p.gols_b === null || p.gols_b === undefined) ? null : p.gols_b
+  let cfg = {};
+  try { cfg = JSON.parse(c.config_json || '{}'); } catch {}
+  const todas = ptStmt.all(c.id).map(p => ({
+    id: p.id, rodada: p.rodada, posicao: p.posicao,
+    equipeA: p.equipe_a || '', equipeB: p.equipe_b || '',
+    vencedor: p.vencedor || '', isTerceiro: !!p.is_terceiro,
+    grupo: p.grupo || '', blocoId: p.bloco_id || '',
+    golsA: (p.gols_a === null || p.gols_a === undefined) ? null : p.gols_a,
+    golsB: (p.gols_b === null || p.gols_b === undefined) ? null : p.gols_b
+  }));
+
+  let blocos = null;
+  if (c.tipo === 'personalizado') {
+    blocos = db.prepare('SELECT * FROM competicoes_blocos WHERE competicao_id = ? ORDER BY ordem').all(c.id)
+      .map(b => ({
+        id: b.id, nome: b.nome, tipo: b.tipo, ordem: b.ordem,
+        ehFinal: !!b.eh_final, ehTerceiro: !!b.eh_terceiro,
+        config: (() => { try { return JSON.parse(b.config_json || '{}'); } catch { return {}; } })()
       }));
+  }
 
       // Se for grupos_mata_mata, calcula a classificação de cada grupo
       let gruposOut = null;
@@ -361,7 +404,8 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
         id: c.id, nome: c.nome, tipo: c.tipo, config: cfg,
         pontos1: c.pontos_1 || 0, pontos2: c.pontos_2 || 0, pontos3: c.pontos_3 || 0,
         partidas: todas,
-        grupos: gruposOut
+        grupos: gruposOut,
+        blocos: blocos
       };
     })
   });
@@ -767,6 +811,7 @@ function mapPartida(row) {
     vencedor: row.vencedor || '',
     isTerceiro: !!row.is_terceiro,
     grupo: row.grupo || '',
+    blocoId: row.bloco_id || '',
     golsA: (row.gols_a === null || row.gols_a === undefined) ? null : row.gols_a,
     golsB: (row.gols_b === null || row.gols_b === undefined) ? null : row.gols_b
   };
@@ -1143,7 +1188,11 @@ app.get('/api/competicoes', auth, (req, res) => {
         return { nome, classificacao: classif, partidas: matches };
       });
     }
-
+    // Blocos (para personalizadas)
+    if (comp.tipo === 'personalizado') {
+      comp.blocos = db.prepare('SELECT * FROM competicoes_blocos WHERE competicao_id = ? ORDER BY ordem')
+        .all(r.id).map(mapBloco);
+    }
     return comp;
   });
 
@@ -1158,6 +1207,16 @@ app.get('/api/competicoes', auth, (req, res) => {
  *   - grupos_mata_mata: distribui em grupos e gera todos-contra-todos
  *     (o mata-mata é gerado depois, quando o usuário clicar no botão)
  */
+/* ============================================================
+   POST /api/competicoes
+   ------------------------------------------------------------
+   Cria uma competição. Comporta-se diferente por tipo:
+     - mata_mata:        gera chave completa na hora
+     - grupos_mata_mata: distribui em grupos e gera todos-contra-todos
+                         (o mata-mata é gerado depois, no botão)
+     - personalizado:    nasce VAZIA. O admin cria blocos e
+                         confrontos pelo editor de blocos.
+   ============================================================ */
 app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
   const {
     nome, tipo = 'mata_mata', equipes, pontos1, pontos2, pontos3, secreto,
@@ -1174,42 +1233,59 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
   }
 
   const id = uid();
-  const tipoFinal = tipo === 'grupos_mata_mata' ? 'grupos_mata_mata' : 'mata_mata';
+  const tipoFinal =
+    tipo === 'grupos_mata_mata' ? 'grupos_mata_mata' :
+    tipo === 'personalizado'    ? 'personalizado' :
+                                  'mata_mata';
 
+  // ============================================================
+  // RAMO 1 — MATA-MATA SIMPLES
+  // ============================================================
   if (tipoFinal === 'mata_mata') {
-    // ----- MATA-MATA SIMPLES -----
     const partidas = gerarChave(equipes);
     const tx = db.transaction(() => {
-      db.prepare(`INSERT INTO competicoes (id, org_id, nome, tipo, secreto, equipes_json, pontos_1, pontos_2, pontos_3, config_json)
-                  VALUES (?, ?, ?, 'mata_mata', ?, ?, ?, ?, ?, '{}')`)
+      db.prepare(`INSERT INTO competicoes
+        (id, org_id, nome, tipo, secreto, equipes_json, pontos_1, pontos_2, pontos_3, config_json)
+        VALUES (?, ?, ?, 'mata_mata', ?, ?, ?, ?, ?, '{}')`)
         .run(id, orgId, nome.trim(), secreto ? 1 : 0, JSON.stringify(equipes),
              Number(pontos1) || 0, Number(pontos2) || 0, Number(pontos3) || 0);
+
       const ins = db.prepare(`INSERT INTO competicoes_partidas
         (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-      partidas.forEach(p => ins.run(uid(), id, p.rodada, p.posicao, p.equipe_a, p.equipe_b, p.vencedor, p.is_terceiro));
+      partidas.forEach(p =>
+        ins.run(uid(), id, p.rodada, p.posicao, p.equipe_a, p.equipe_b, p.vencedor, p.is_terceiro)
+      );
     });
     tx();
-  } else {
-    // ----- GRUPOS + MATA-MATA -----
-    const nG = Math.max(2, Math.min(8, Number(numGrupos) || 2));
+
+  // ============================================================
+  // RAMO 2 — GRUPOS + MATA-MATA
+  // ============================================================
+  } else if (tipoFinal === 'grupos_mata_mata') {
+    const nG  = Math.max(2, Math.min(8, Number(numGrupos) || 2));
     const cPG = Math.max(1, Math.min(4, Number(classificadosPorGrupo) || 2));
+
     if (equipes.length < nG * 2) {
-      return res.status(400).json({ erro: `Precisa de ao menos ${nG * 2} equipes para ${nG} grupos` });
+      return res.status(400).json({
+        erro: `Precisa de ao menos ${nG * 2} equipes para ${nG} grupos`
+      });
     }
+
     const grupos = distribuirGrupos(equipes, nG);
     const config = {
       numGrupos: nG,
       classificadosPorGrupo: cPG,
       pontosVitoria: Number(pontosVitoria) || 3,
-      pontosEmpate: Number(pontosEmpate) || 1,
+      pontosEmpate:  Number(pontosEmpate)  || 1,
       gruposGerados: true,
-      mataMataGerado: false       // ← controla se o botão "gerar mata-mata" já foi usado
+      mataMataGerado: false
     };
 
     const tx = db.transaction(() => {
-      db.prepare(`INSERT INTO competicoes (id, org_id, nome, tipo, secreto, equipes_json, pontos_1, pontos_2, pontos_3, config_json)
-                  VALUES (?, ?, ?, 'grupos_mata_mata', ?, ?, ?, ?, ?, ?)`)
+      db.prepare(`INSERT INTO competicoes
+        (id, org_id, nome, tipo, secreto, equipes_json, pontos_1, pontos_2, pontos_3, config_json)
+        VALUES (?, ?, ?, 'grupos_mata_mata', ?, ?, ?, ?, ?, ?)`)
         .run(id, orgId, nome.trim(), secreto ? 1 : 0, JSON.stringify(equipes),
              Number(pontos1) || 0, Number(pontos2) || 0, Number(pontos3) || 0,
              JSON.stringify(config));
@@ -1218,7 +1294,6 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
         (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo)
         VALUES (?, ?, ?, ?, ?, ?, '', 0, ?)`);
 
-      // Para cada grupo, gera os confrontos todos-contra-todos
       grupos.forEach((equipesGrupo, gi) => {
         const nomeGrupo = LETRAS_GRUPO[gi];
         const rounds = gerarRoundRobin(equipesGrupo);
@@ -1230,10 +1305,30 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
       });
     });
     tx();
+
+  // ============================================================
+  // RAMO 3 — PERSONALIZADO (livre)
+  // ------------------------------------------------------------
+  // Nasce VAZIO. Só grava o registro base da competição.
+  // Blocos e partidas são criados depois, no editor de blocos
+  // (POST /api/competicoes/:id/blocos).
+  // ============================================================
+  } else if (tipoFinal === 'personalizado') {
+    db.prepare(`INSERT INTO competicoes
+      (id, org_id, nome, tipo, secreto, equipes_json, pontos_1, pontos_2, pontos_3, config_json)
+      VALUES (?, ?, ?, 'personalizado', ?, ?, ?, ?, ?, '{}')`)
+      .run(id, orgId, nome.trim(), secreto ? 1 : 0, JSON.stringify(equipes),
+           Number(pontos1) || 0, Number(pontos2) || 0, Number(pontos3) || 0);
   }
 
+  // ============================================================
+  // Resposta comum aos 3 ramos
+  // ============================================================
   const row = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(id);
-  const salvas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao').all(id).map(mapPartida);
+  const salvas = db.prepare(
+    'SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao'
+  ).all(id).map(mapPartida);
+
   res.status(201).json(mapCompeticao(row, salvas));
 });
 
@@ -1282,6 +1377,190 @@ app.post('/api/competicoes/:id/gerar-chave', auth, bloquearAdminGeral, (req, res
   res.json(salvas);
 });
 
+/* ============================================================
+   POST /api/competicoes/:id/montar-chave
+   ------------------------------------------------------------
+   Cria a chave do mata-mata a partir de confrontos definidos
+   MANUALMENTE pelo admin (em vez de sorteados).
+
+   Body: { confrontos: [ { equipeA: 'id-x', equipeB: 'id-y' }, ... ] }
+
+   Apaga APENAS as partidas do mata-mata (grupo = ''); partidas
+   de fase de grupos ficam intactas.
+   ============================================================ */
+/* ============================================================
+   POST /api/competicoes/:id/montar-chave
+   ------------------------------------------------------------
+   Cria a chave do mata-mata a partir de confrontos definidos
+   MANUALMENTE pelo admin (em vez de sorteados).
+
+   Body: { confrontos: [ { equipeA: 'id-x', equipeB: 'id-y' }, ... ] }
+
+   Apaga APENAS as partidas do mata-mata (grupo = ''); partidas
+   de fase de grupos ficam intactas.
+   ============================================================ */
+/* ============================================================
+   POST /api/competicoes/:id/montar-chave
+   ------------------------------------------------------------
+   Cria a chave do mata-mata a partir de confrontos definidos
+   MANUALMENTE pelo admin (em vez de sorteados).
+
+   Body:
+     {
+       confrontos: [ { equipeA, equipeB }, ... ],   // rodada 1 (play-in)
+       byes:       [ 'id-x', 'id-y', ... ]          // avançam direto
+     }
+
+   Quando o número de equipes NÃO é potência de 2, a chave segue
+   o padrão de torneios reais:
+     - Q = maior potência de 2 ≤ N
+     - numConfrontos = N - Q  (play-in, elimina 1 por partida)
+     - numByes       = 2*Q - N (avançam direto à próxima fase)
+
+   Ex.: N=12 → Q=8, 4 confrontos preliminares + 4 byes.
+        N=6  → Q=4, 2 confrontos preliminares + 2 byes.
+        N=8  → Q=8, 4 confrontos, 0 byes (potência de 2).
+
+   Os slots da rodada 1 são INTERCALADOS (match, bye, match, bye...)
+   para que, na rodada 2, cada jogo junte um vencedor de play-in
+   contra um time que avançou direto.
+   ============================================================ */
+app.post('/api/competicoes/:id/montar-chave', auth, bloquearAdminGeral, (req, res) => {
+  try {
+    const comp = db.prepare(
+      'SELECT * FROM competicoes WHERE id = ? AND org_id = ?'
+    ).get(req.params.id, req.user.org_id);
+
+    if (!comp) return res.status(404).json({ erro: 'Competição não encontrada' });
+
+    const equipesInscritas = JSON.parse(comp.equipes_json || '[]');
+    const N = equipesInscritas.length;
+
+    if (N < 2) return res.status(400).json({ erro: 'Precisa de ao menos 2 equipes' });
+
+    // ---------- Calcula estrutura (byes + play-in) ----------
+    let Q = 1;
+    while (Q * 2 <= N) Q *= 2;
+    const numByes      = 2 * Q - N;
+    const numConfrontos = N - Q;
+
+    const { confrontos = [], byes = [] } = req.body || {};
+
+    // ---------- Valida quantidade ----------
+    if (confrontos.length !== numConfrontos) {
+      return res.status(400).json({
+        erro: `São esperados ${numConfrontos} confronto(s) preliminar(es)` +
+              (numByes ? ` e ${numByes} equipe(s) com bye` : '')
+      });
+    }
+    if (byes.length !== numByes) {
+      return res.status(400).json({
+        erro: `São esperadas ${numByes} equipe(s) com bye`
+      });
+    }
+
+    // ---------- Valida cada confronto ----------
+    const usados = new Set();
+    for (const cf of confrontos) {
+      if (!cf.equipeA || !cf.equipeB)
+        return res.status(400).json({ erro: 'Preencha todos os confrontos' });
+      if (cf.equipeA === cf.equipeB)
+        return res.status(400).json({ erro: 'Uma equipe não pode enfrentar a si mesma' });
+      if (!equipesInscritas.includes(cf.equipeA) ||
+          !equipesInscritas.includes(cf.equipeB))
+        return res.status(400).json({ erro: 'Equipe não inscrita nesta competição' });
+      if (usados.has(cf.equipeA) || usados.has(cf.equipeB))
+        return res.status(400).json({ erro: 'Equipe repetida em dois confrontos' });
+      usados.add(cf.equipeA);
+      usados.add(cf.equipeB);
+    }
+
+    // ---------- Valida cada bye ----------
+    for (const b of byes) {
+      if (!equipesInscritas.includes(b))
+        return res.status(400).json({ erro: 'Equipe com bye não inscrita' });
+      if (usados.has(b))
+        return res.status(400).json({ erro: 'Equipe com bye também está num confronto' });
+      usados.add(b);
+    }
+
+    if (usados.size !== N) {
+      return res.status(400).json({ erro: 'Todas as equipes precisam ser alocadas' });
+    }
+
+    // ---------- Monta os slots da rodada 1 (intercalados) ----------
+    // Formato: match, bye, match, bye, ... (+ byes extras no fim)
+    const slotsR1 = [];
+    for (let i = 0; i < numConfrontos; i++) {
+      slotsR1.push({ tipo: 'match', a: confrontos[i].equipeA, b: confrontos[i].equipeB });
+      if (i < numByes) {
+        slotsR1.push({ tipo: 'bye', time: byes[i] });
+      }
+    }
+    for (let i = numConfrontos; i < numByes; i++) {
+      slotsR1.push({ tipo: 'bye', time: byes[i] });
+    }
+    // slotsR1.length === Q
+
+    const insert = db.prepare(`
+      INSERT INTO competicoes_partidas
+        (id, competicao_id, rodada, posicao, equipe_a, equipe_b,
+         vencedor, is_terceiro, grupo)
+      VALUES (?, ?, ?, ?, ?, ?, '', ?, '')
+    `);
+
+    const tx = db.transaction(() => {
+      // Só apaga partidas do mata-mata (grupo vazio)
+      db.prepare(
+        "DELETE FROM competicoes_partidas WHERE competicao_id = ? AND grupo = ''"
+      ).run(comp.id);
+
+      // ---------- Rodada 1: play-in + byes intercalados ----------
+      slotsR1.forEach((s, i) => {
+        if (s.tipo === 'match') {
+          insert.run(uid(), comp.id, 1, i, s.a, s.b, 0);
+        } else {
+          // bye: só 1 time; o recomputarChave() já promove sozinho
+          insert.run(uid(), comp.id, 1, i, s.time, '', 0);
+        }
+      });
+
+      // ---------- Rodadas seguintes (vazias), sempre /2 ----------
+      // Q é potência de 2, então essa divisão é sempre exata.
+      let slots = Q;
+      let rodada = 2;
+      while (slots > 1) {
+        const slotsProx = slots / 2;
+        for (let i = 0; i < slotsProx; i++) {
+          insert.run(uid(), comp.id, rodada, i, '', '', 0);
+        }
+        slots = slotsProx;
+        rodada++;
+      }
+
+      // ---------- Disputa de 3º lugar (só se houver semi) ----------
+      if (Q >= 4) {
+        insert.run(uid(), comp.id, rodada, 0, '', '', 1);
+      }
+
+      // Marca no config_json
+      const cfg = JSON.parse(comp.config_json || '{}');
+      cfg.mataMataGerado = true;
+      cfg.montagemManual = true;
+      cfg.byes = numByes;
+      db.prepare('UPDATE competicoes SET config_json = ? WHERE id = ?')
+        .run(JSON.stringify(cfg), comp.id);
+    });
+
+    tx();
+    res.json({ ok: true, numByes, numConfrontos });
+
+  } catch (e) {
+    console.error('[montar-chave] erro:', e);
+    res.status(500).json({ erro: 'Erro interno: ' + e.message });
+  }
+});
+
 /**
  * PUT /api/competicoes/:id/partidas/:pid/vencedor
  * ------------------------------------------------------------
@@ -1298,6 +1577,14 @@ app.put('/api/competicoes/:id/partidas/:pid/vencedor', auth, bloquearAdminGeral,
   const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY rodada, posicao, id').all(req.params.id);
   const alvo = partidas.find(x => x.id === req.params.pid);
   if (!alvo) return res.status(404).json({ erro: 'Partida não encontrada' });
+  // Em competições personalizadas, não propaga automaticamente —
+// o admin escolhe manualmente quem entra em cada confronto.
+  if (c.tipo === 'personalizado') {
+    db.prepare('UPDATE competicoes_partidas SET vencedor=? WHERE id=?')
+      .run(String(vencedor || ''), alvo.id);
+    const salvas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY bloco_id, posicao, rodada').all(req.params.id).map(mapPartida);
+    return res.json(salvas);
+  }
 
   const antigoVenc = alvo.vencedor;
   alvo.vencedor = String(vencedor || '');
@@ -1353,7 +1640,18 @@ app.put('/api/competicoes/:id/partidas/:pid/placar', auth, bloquearAdminGeral, (
   const p = db.prepare('SELECT * FROM competicoes_partidas WHERE id = ? AND competicao_id = ?')
     .get(req.params.pid, c.id);
   if (!p) return res.status(404).json({ erro: 'Partida não encontrada' });
-  if (!p.grupo) return res.status(400).json({ erro: 'Só é possível lançar placar em partidas de grupo' });
+    // Aceita placar em partidas de grupo OU em partidas de bloco tipo 'grupo'
+      // Aceita placar em partidas de grupo, repescagem, ou em partidas de bloco
+    // dos tipos 'grupo' e 'repescagem'
+    // Aceita placar em partidas de grupo OU em partidas de bloco tipo 'grupo'
+    let blocoAceitaPlacar = false;
+if (p.bloco_id) {
+  const bl = db.prepare('SELECT tipo FROM competicoes_blocos WHERE id = ?').get(p.bloco_id);
+  blocoAceitaPlacar = bl && (bl.tipo === 'grupo' || bl.tipo === 'repescagem');
+}
+if (!p.grupo && !blocoAceitaPlacar) {
+  return res.status(400).json({ erro: 'Só é possível lançar placar em partidas de grupo ou repescagem' });
+}
 
   const { golsA, golsB } = req.body || {};
   const ga = (golsA === null || golsA === undefined || golsA === '') ? null : Number(golsA);
@@ -1572,24 +1870,59 @@ app.get('/api/classificacao', auth, (req, res) => {
   });
 
   // Soma pontos das competições (só partidas do mata-mata)
-  competicoes.forEach(c => {
-    const pts = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ?').all(c.id).map(mapPartida);
-    const principais = pts.filter(p => !p.isTerceiro && !p.grupo);
-    const terc = pts.find(p => p.isTerceiro && !p.grupo);
-    const maxR = principais.length ? Math.max(...principais.map(p => p.rodada)) : 0;
-    const final = principais.find(p => p.rodada === maxR && p.vencedor && p.equipeA && p.equipeB);
-    if (final) {
-      const perd = final.vencedor === final.equipeA ? final.equipeB : final.equipeA;
-      const v = mapa.get(final.vencedor);
-      const p2 = mapa.get(perd);
-      if (v) { v.pontos += Number(c.pontos_1) || 0; v.jogos++; }
-      if (p2) { p2.pontos += Number(c.pontos_2) || 0; p2.jogos++; }
+  // Soma pontos das competições
+competicoes.forEach(c => {
+  const pts = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ?').all(c.id).map(mapPartida);
+
+  // -------- Personalizado: usa os blocos "eh_final" e "eh_terceiro" --------
+  if (c.tipo === 'personalizado') {
+    const blocos = db.prepare('SELECT * FROM competicoes_blocos WHERE competicao_id = ?').all(c.id);
+    const blocoFinal = blocos.find(b => b.eh_final);
+    const blocoTerceiro = blocos.find(b => b.eh_terceiro);
+
+    if (blocoFinal) {
+      const finais = pts
+        .filter(p => p.blocoId === blocoFinal.id && p.vencedor && p.equipeA && p.equipeB)
+        .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
+      const final = finais[0];
+      if (final) {
+        const perd = final.vencedor === final.equipeA ? final.equipeB : final.equipeA;
+        const v = mapa.get(final.vencedor);
+        const p2 = mapa.get(perd);
+        if (v) { v.pontos += Number(c.pontos_1) || 0; v.jogos++; }
+        if (p2) { p2.pontos += Number(c.pontos_2) || 0; p2.jogos++; }
+      }
     }
-    if (terc && terc.vencedor) {
-      const t3 = mapa.get(terc.vencedor);
-      if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
+    if (blocoTerceiro) {
+      const terceiros = pts
+        .filter(p => p.blocoId === blocoTerceiro.id && p.vencedor)
+        .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
+      const terc = terceiros[0];
+      if (terc) {
+        const t3 = mapa.get(terc.vencedor);
+        if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
+      }
     }
-  });
+    return; // não usa a lógica antiga
+  }
+
+  // -------- Mata-mata e grupos + mata-mata: lógica antiga --------
+  const principais = pts.filter(p => !p.isTerceiro && !p.grupo);
+  const terc = pts.find(p => p.isTerceiro && !p.grupo);
+  const maxR = principais.length ? Math.max(...principais.map(p => p.rodada)) : 0;
+  const final = principais.find(p => p.rodada === maxR && p.vencedor && p.equipeA && p.equipeB);
+  if (final) {
+    const perd = final.vencedor === final.equipeA ? final.equipeB : final.equipeA;
+    const v = mapa.get(final.vencedor);
+    const p2 = mapa.get(perd);
+    if (v) { v.pontos += Number(c.pontos_1) || 0; v.jogos++; }
+    if (p2) { p2.pontos += Number(c.pontos_2) || 0; p2.jogos++; }
+  }
+  if (terc && terc.vencedor) {
+    const t3 = mapa.get(terc.vencedor);
+    if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
+  }
+});
 
   // Subtrai penalidades
   penalidades.forEach(p => {
@@ -1602,8 +1935,457 @@ app.get('/api/classificacao', auth, (req, res) => {
     .sort((a, b) => b.total - a.total || a.equipe.nome.localeCompare(b.equipe.nome, 'pt-BR'));
   res.json(lista);
 });
+// ============================================================
+// COMPETIÇÕES PERSONALIZADAS — blocos e partidas editáveis
+// ============================================================
+
+function classificarBloco(partidas, cfg) {
+  const ptsV = Number(cfg?.pontosVitoria) || 3;
+  const ptsE = Number(cfg?.pontosEmpate) || 1;
+  const idsSet = new Set();
+  partidas.forEach(p => {
+    if (p.equipe_a) idsSet.add(p.equipe_a);
+    if (p.equipe_b) idsSet.add(p.equipe_b);
+  });
+  const mapa = new Map();
+  Array.from(idsSet).forEach(eid =>
+    mapa.set(eid, { id: eid, P:0,V:0,E:0,D:0,GP:0,GC:0,SG:0,PTS:0 })
+  );
+  partidas.forEach(p => {
+    if (!p.equipe_a || !p.equipe_b) return;
+    if (p.gols_a === null || p.gols_b === null) return;
+    const a = mapa.get(p.equipe_a), b = mapa.get(p.equipe_b);
+    if (!a || !b) return;
+    a.P++; b.P++;
+    a.GP += p.gols_a; a.GC += p.gols_b;
+    b.GP += p.gols_b; b.GC += p.gols_a;
+    if (p.gols_a > p.gols_b) { a.V++; a.PTS += ptsV; b.D++; }
+    else if (p.gols_a < p.gols_b) { b.V++; b.PTS += ptsV; a.D++; }
+    else { a.E++; b.E++; a.PTS += ptsE; b.PTS += ptsE; }
+  });
+  return Array.from(mapa.values())
+    .map(x => ({ ...x, SG: x.GP - x.GC }))
+    .sort((x, y) => y.PTS - x.PTS || y.SG - x.SG || y.GP - x.GP);
+}
+
+function mapBloco(row) {
+  let cfg = {};
+  try { cfg = JSON.parse(row.config_json || '{}'); } catch {}
+  return {
+    id: row.id,
+    competicaoId: row.competicao_id,
+    nome: row.nome,
+    tipo: row.tipo,
+    ordem: row.ordem || 0,
+    ehFinal: !!row.eh_final,
+    ehTerceiro: !!row.eh_terceiro,
+    config: cfg
+  };
+}
+/* Calcula a classificação de um bloco tipo grupo/repescagem */
+function classificarBloco(partidas, cfg) {
+  const pontosV = Number(cfg?.pontosVitoria) || 3;
+  const pontosE = Number(cfg?.pontosEmpate) || 1;
+
+  const idsSet = new Set();
+  partidas.forEach(p => {
+    if (p.equipe_a) idsSet.add(p.equipe_a);
+    if (p.equipe_b) idsSet.add(p.equipe_b);
+  });
+
+  const mapa = new Map();
+  Array.from(idsSet).forEach(eid =>
+    mapa.set(eid, { id: eid, P:0, V:0, E:0, D:0, GP:0, GC:0, SG:0, PTS:0 })
+  );
+
+  partidas.forEach(p => {
+    if (!p.equipe_a || !p.equipe_b) return;
+    if (p.gols_a === null || p.gols_b === null) return;
+    const a = mapa.get(p.equipe_a), b = mapa.get(p.equipe_b);
+    if (!a || !b) return;
+    a.P++; b.P++;
+    a.GP += p.gols_a; a.GC += p.gols_b;
+    b.GP += p.gols_b; b.GC += p.gols_a;
+    if (p.gols_a > p.gols_b) { a.V++; a.PTS += pontosV; b.D++; }
+    else if (p.gols_a < p.gols_b) { b.V++; b.PTS += pontosV; a.D++; }
+    else { a.E++; b.E++; a.PTS += pontosE; b.PTS += pontosE; }
+  });
+
+  return Array.from(mapa.values())
+    .map(x => ({ ...x, SG: x.GP - x.GC }))
+    .sort((x, y) => y.PTS - x.PTS || y.SG - x.SG || y.GP - x.GP);
+}
+
+/* -------- Blocos: CRUD -------- */
+
+// POST /api/competicoes/:id/blocos
+app.post('/api/competicoes/:id/blocos', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+  if (c.tipo !== 'personalizado') return res.status(400).json({ erro: 'Competição não é personalizada' });
+
+  const { nome, tipo } = req.body || {};
+  if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome do bloco é obrigatório' });
+  const tipoFinal =
+  tipo === 'grupo'      ? 'grupo' :
+  tipo === 'repescagem' ? 'repescagem' :
+                          'eliminatoria';
+  const id = uid();
+
+  // Coloca no final da ordem
+  const max = db.prepare('SELECT COALESCE(MAX(ordem), -1) AS m FROM competicoes_blocos WHERE competicao_id = ?').get(c.id).m;
+  db.prepare(`INSERT INTO competicoes_blocos (id, competicao_id, nome, tipo, ordem)
+              VALUES (?, ?, ?, ?, ?)`).run(id, c.id, nome.trim(), tipoFinal, max + 1);
+
+  res.status(201).json(mapBloco(db.prepare('SELECT * FROM competicoes_blocos WHERE id = ?').get(id)));
+});
+
+// PUT /api/competicoes/:id/blocos/:bid
+app.put('/api/competicoes/:id/blocos/:bid', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const b = db.prepare('SELECT * FROM competicoes_blocos WHERE id = ? AND competicao_id = ?').get(req.params.bid, c.id);
+  if (!b) return res.status(404).json({ erro: 'Bloco não encontrado' });
+
+  const { nome, tipo, ehFinal, ehTerceiro, config } = req.body || {};
+  const nomeFinal = nome && nome.trim() ? nome.trim() : b.nome;
+  const tipoFinal =
+  (tipo === 'grupo' || tipo === 'eliminatoria' || tipo === 'repescagem') ? tipo : b.tipo;
+
+  db.prepare(`UPDATE competicoes_blocos
+              SET nome=?, tipo=?, eh_final=?, eh_terceiro=?, config_json=?
+              WHERE id=?`)
+    .run(
+      nomeFinal, tipoFinal,
+      ehFinal === undefined ? b.eh_final : (ehFinal ? 1 : 0),
+      ehTerceiro === undefined ? b.eh_terceiro : (ehTerceiro ? 1 : 0),
+      config ? JSON.stringify(config) : b.config_json,
+      b.id
+    );
+  res.json(mapBloco(db.prepare('SELECT * FROM competicoes_blocos WHERE id = ?').get(b.id)));
+});
+
+// DELETE /api/competicoes/:id/blocos/:bid
+app.delete('/api/competicoes/:id/blocos/:bid', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  db.prepare('DELETE FROM competicoes_partidas WHERE bloco_id = ?').run(req.params.bid);
+  db.prepare('DELETE FROM competicoes_blocos WHERE id = ? AND competicao_id = ?').run(req.params.bid, c.id);
+  res.json({ ok: true });
+});
+
+/* -------- Partidas de um bloco: CRUD -------- */
+
+// POST /api/competicoes/:id/blocos/:bid/partidas
+app.post('/api/competicoes/:id/blocos/:bid/partidas', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const b = db.prepare('SELECT * FROM competicoes_blocos WHERE id = ? AND competicao_id = ?').get(req.params.bid, c.id);
+  if (!b) return res.status(404).json({ erro: 'Bloco não encontrado' });
+
+  const { equipeA = '', equipeB = '' } = req.body || {};
+  const max = db.prepare('SELECT COALESCE(MAX(posicao), -1) AS m FROM competicoes_partidas WHERE bloco_id = ?').get(b.id).m;
+  const id = uid();
+
+  db.prepare(`INSERT INTO competicoes_partidas
+    (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo, bloco_id)
+    VALUES (?, ?, 1, ?, ?, ?, '', 0, '', ?)`)
+    .run(id, c.id, max + 1, equipeA, equipeB, b.id);
+
+  res.status(201).json(mapPartida(db.prepare('SELECT * FROM competicoes_partidas WHERE id = ?').get(id)));
+});
+
+app.post('/api/competicoes/:id/blocos/:bid/popular-repescagem', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const b = db.prepare('SELECT * FROM competicoes_blocos WHERE id = ? AND competicao_id = ?')
+    .get(req.params.bid, c.id);
+  if (!b) return res.status(404).json({ erro: 'Bloco não encontrado' });
+  if (b.tipo !== 'repescagem') return res.status(400).json({ erro: 'Só funciona em bloco tipo Repescagem' });
+
+  const { posicao = 2 } = req.body || {};
+
+  const grupos = db.prepare(
+    "SELECT * FROM competicoes_blocos WHERE competicao_id = ? AND tipo = 'grupo' ORDER BY ordem"
+  ).all(c.id);
+  if (!grupos.length) return res.status(400).json({ erro: 'Crie pelo menos um bloco de Grupo' });
+
+  const ids = [];
+  let faltamPlacar = 0;
+  grupos.forEach(g => {
+    const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE bloco_id = ?').all(g.id);
+    const classif = classificarBloco(partidas, JSON.parse(g.config_json || '{}'));
+    if (classif[posicao - 1]) ids.push(classif[posicao - 1].id);
+    else faltamPlacar++;
+  });
+
+  if (faltamPlacar === grupos.length) {
+    return res.status(400).json({ erro: 'Lance os placares dos grupos primeiro' });
+  }
+  if (ids.length < 2) {
+    return res.status(400).json({ erro: 'Precisa de pelo menos 2 equipes para a repescagem' });
+  }
+
+  // Round-robin
+  const lista = [...ids];
+  if (lista.length % 2 === 1) lista.push(null);
+  const n = lista.length;
+  const half = n / 2;
+  const confrontos = [];
+  for (let r = 0; r < n - 1; r++) {
+    for (let i = 0; i < half; i++) {
+      const a = lista[i], bb = lista[n - 1 - i];
+      if (a !== null && bb !== null) {
+        confrontos.push(r % 2 === 0 ? { a, b: bb } : { a: bb, b: a });
+      }
+    }
+    const fixed = lista[0];
+    const rest = lista.slice(1);
+    rest.unshift(rest.pop());
+    lista.length = 0;
+    lista.push(fixed, ...rest);
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO competicoes_partidas
+      (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo, bloco_id)
+    VALUES (?, ?, 1, ?, ?, ?, '', 0, '', ?)
+  `);
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM competicoes_partidas WHERE bloco_id = ?').run(b.id);
+    confrontos.forEach((cf, i) => insert.run(uid(), c.id, i, cf.a, cf.b, b.id));
+  });
+  tx();
+
+  res.json({ ok: true, equipes: ids.length, criados: confrontos.length });
+});
 
 
+app.post('/api/competicoes/:id/blocos/:bid/gerar-round-robin', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const b = db.prepare('SELECT * FROM competicoes_blocos WHERE id = ? AND competicao_id = ?')
+    .get(req.params.bid, c.id);
+  if (!b) return res.status(404).json({ erro: 'Bloco não encontrado' });
+  if (b.tipo !== 'grupo') return res.status(400).json({ erro: 'Só funciona em blocos tipo Grupo' });
+
+  const { equipeIds } = req.body || {};
+  if (!Array.isArray(equipeIds) || equipeIds.length < 2) {
+    return res.status(400).json({ erro: 'Selecione ao menos 2 equipes' });
+  }
+
+  const inscritas = JSON.parse(c.equipes_json || '[]');
+  for (const id of equipeIds) {
+    if (!inscritas.includes(id)) {
+      return res.status(400).json({ erro: 'Equipe não inscrita nesta competição' });
+    }
+  }
+
+  // Gera round-robin (método do círculo)
+  const lista = [...equipeIds];
+  if (lista.length % 2 === 1) lista.push(null);
+  const n = lista.length;
+  const half = n / 2;
+  const confrontos = [];
+
+  for (let r = 0; r < n - 1; r++) {
+    for (let i = 0; i < half; i++) {
+      const a = lista[i];
+      const bb = lista[n - 1 - i];
+      if (a !== null && bb !== null) {
+        confrontos.push(r % 2 === 0 ? { a, b: bb } : { a: bb, b: a });
+      }
+    }
+    const fixed = lista[0];
+    const rest = lista.slice(1);
+    rest.unshift(rest.pop());
+    lista.length = 0;
+    lista.push(fixed, ...rest);
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO competicoes_partidas
+      (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo, bloco_id)
+    VALUES (?, ?, 1, ?, ?, ?, '', 0, '', ?)
+  `);
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM competicoes_partidas WHERE bloco_id = ?').run(b.id);
+    confrontos.forEach((cf, i) => {
+      insert.run(uid(), c.id, i, cf.a, cf.b, b.id);
+    });
+  });
+  tx();
+
+  res.json({ ok: true, criados: confrontos.length });
+});
+
+// PUT /api/competicoes/:id/partidas/:pid  (edita equipes do confronto)
+app.put('/api/competicoes/:id/partidas/:pid', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const p = db.prepare('SELECT * FROM competicoes_partidas WHERE id = ? AND competicao_id = ?').get(req.params.pid, c.id);
+  if (!p) return res.status(404).json({ erro: 'Partida não encontrada' });
+
+  const { equipeA, equipeB } = req.body || {};
+  const a = equipeA === undefined ? p.equipe_a : equipeA;
+  const b = equipeB === undefined ? p.equipe_b : equipeB;
+
+  // Limpa vencedor se a equipe mudou
+  let venc = p.vencedor;
+  if ((p.equipe_a !== a || p.equipe_b !== b) && venc && venc !== a && venc !== b) {
+    venc = '';
+  }
+
+  db.prepare('UPDATE competicoes_partidas SET equipe_a=?, equipe_b=?, vencedor=? WHERE id=?')
+    .run(a, b, venc, p.id);
+
+  res.json(mapPartida(db.prepare('SELECT * FROM competicoes_partidas WHERE id = ?').get(p.id)));
+});
+
+// DELETE /api/competicoes/:id/partidas/:pid
+app.delete('/api/competicoes/:id/partidas/:pid', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  const r = db.prepare('DELETE FROM competicoes_partidas WHERE id = ? AND competicao_id = ?').run(req.params.pid, c.id);
+  if (r.changes === 0) return res.status(404).json({ erro: 'Partida não encontrada' });
+  res.json({ ok: true });
+});
+
+/* Calcula a classificação de um bloco tipo grupo/repescagem */
+function classificarBloco(partidas, cfg) {
+  const pontosV = Number(cfg?.pontosVitoria) || 3;
+  const pontosE = Number(cfg?.pontosEmpate) || 1;
+
+  const idsSet = new Set();
+  partidas.forEach(p => {
+    if (p.equipe_a) idsSet.add(p.equipe_a);
+    if (p.equipe_b) idsSet.add(p.equipe_b);
+  });
+
+  const mapa = new Map();
+  Array.from(idsSet).forEach(eid =>
+    mapa.set(eid, { id: eid, P:0, V:0, E:0, D:0, GP:0, GC:0, SG:0, PTS:0 })
+  );
+
+  partidas.forEach(p => {
+    if (!p.equipe_a || !p.equipe_b) return;
+    if (p.gols_a === null || p.gols_b === null) return;
+    const a = mapa.get(p.equipe_a), b = mapa.get(p.equipe_b);
+    if (!a || !b) return;
+    a.P++; b.P++;
+    a.GP += p.gols_a; a.GC += p.gols_b;
+    b.GP += p.gols_b; b.GC += p.gols_a;
+    if (p.gols_a > p.gols_b) { a.V++; a.PTS += pontosV; b.D++; }
+    else if (p.gols_a < p.gols_b) { b.V++; b.PTS += pontosV; a.D++; }
+    else { a.E++; b.E++; a.PTS += pontosE; b.PTS += pontosE; }
+  });
+
+  return Array.from(mapa.values())
+    .map(x => ({ ...x, SG: x.GP - x.GC }))
+    .sort((x, y) => y.PTS - x.PTS || y.SG - x.SG || y.GP - x.GP);
+}
+/* ============================================================
+   POST /api/competicoes/:id/preencher-mata-mata
+   ------------------------------------------------------------
+   Calcula os N primeiros de cada bloco tipo 'grupo' e preenche
+   o PRÓXIMO bloco tipo 'eliminatoria' com o cruzamento olímpico.
+   ============================================================ */
+app.post('/api/competicoes/:id/preencher-mata-mata', auth, bloquearAdminGeral, (req, res) => {
+  const c = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ erro: 'Competição não encontrada' });
+  if (!exigirOrgPropria(req, c.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+  if (c.tipo !== 'personalizado') return res.status(400).json({ erro: 'Só para competições personalizadas' });
+
+  const grupos = db.prepare(
+    "SELECT * FROM competicoes_blocos WHERE competicao_id = ? AND tipo = 'grupo' ORDER BY ordem"
+  ).all(c.id);
+  if (grupos.length < 2) return res.status(400).json({ erro: 'Crie pelo menos 2 blocos de Grupo' });
+
+  const repescagem = db.prepare(
+    "SELECT * FROM competicoes_blocos WHERE competicao_id = ? AND tipo = 'repescagem' ORDER BY ordem LIMIT 1"
+  ).get(c.id);
+
+  // Auto-detecção:
+  //   - Se tem repescagem: 1º de cada grupo + 1º da repescagem
+  //   - Se não tem: usa classificadosPorGrupo do body (padrão 1)
+  const { classificadosPorGrupo: cpgBody = 1 } = req.body || {};
+  const K = repescagem ? 1 : cpgBody;
+
+  // Coleta os K primeiros de cada grupo
+  const classificados = [];
+  for (const g of grupos) {
+    const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE bloco_id = ?').all(g.id);
+    const classif = classificarBloco(partidas, JSON.parse(g.config_json || '{}'));
+    const top = classif.slice(0, K);
+    if (top.length < K) {
+      return res.status(400).json({ erro: `Lance os placares do grupo "${g.nome}" primeiro` });
+    }
+    top.forEach(x => classificados.push(x.id));
+  }
+
+  // Adiciona o vencedor da repescagem
+  if (repescagem) {
+    const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE bloco_id = ?').all(repescagem.id);
+    const classif = classificarBloco(partidas, JSON.parse(repescagem.config_json || '{}'));
+    if (!classif[0]) {
+      return res.status(400).json({ erro: 'Lance os placares da repescagem primeiro' });
+    }
+    classificados.push(classif[0].id);
+  }
+
+  const N = classificados.length;
+  if (N < 2) return res.status(400).json({ erro: 'Poucos classificados para gerar o mata-mata' });
+
+  // Cruzamento olímpico: T1 × TN, T2 × T(N-1), ...
+  const confrontos = [];
+  for (let i = 0; i < Math.floor(N / 2); i++) {
+    confrontos.push({ a: classificados[i], b: classificados[N - 1 - i] });
+  }
+  // Se N ímpar, o time do meio ganha bye
+  if (N % 2 === 1) {
+    confrontos.push({ a: classificados[Math.floor(N / 2)], b: null });
+  }
+
+  // Acha o próximo bloco eliminatório
+  const proximo = db.prepare(`
+    SELECT * FROM competicoes_blocos
+    WHERE competicao_id = ?
+      AND tipo = 'eliminatoria'
+      AND ordem > (SELECT MAX(ordem) FROM competicoes_blocos WHERE competicao_id = ? AND tipo IN ('grupo','repescagem'))
+    ORDER BY ordem LIMIT 1
+  `).get(c.id, c.id);
+  if (!proximo) return res.status(400).json({ erro: 'Crie um bloco Eliminatório depois dos grupos/repescagem' });
+
+  db.prepare('DELETE FROM competicoes_partidas WHERE bloco_id = ?').run(proximo.id);
+
+  const insert = db.prepare(`
+    INSERT INTO competicoes_partidas
+      (id, competicao_id, rodada, posicao, equipe_a, equipe_b, vencedor, is_terceiro, grupo, bloco_id)
+    VALUES (?, ?, 1, ?, ?, ?, '', 0, '', ?)
+  `);
+  const tx = db.transaction(() => {
+    confrontos.forEach((cf, i) => insert.run(uid(), c.id, i, cf.a || '', cf.b || '', proximo.id));
+  });
+  tx();
+
+  res.json({ ok: true, classificados: N, confrontos: confrontos.length });
+});
 // ============================================================
 // FALLBACK SPA
 // ------------------------------------------------------------

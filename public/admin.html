@@ -923,49 +923,52 @@ function renderJogos(el) {
 }
 
 /* ---------- COMPETIÇÕES (Mata-Mata) ---------- */
+/* ---------- COMPETIÇÕES (Mata-Mata) ---------- */
 function renderCompeticoes(el) {
   if (!state.competicoesExpandidas) state.competicoesExpandidas = new Set();
+
+  // Helper: uma "pílula" de pódio, com cor por posição
+  const pillPodio = (emoji, nome, bg, cor) => `
+    <span style="display:inline-flex;align-items:center;gap:6px;
+                 background:${bg};color:${cor};
+                 font-weight:700;font-size:12.5px;
+                 padding:5px 12px;border-radius:999px;
+                 white-space:nowrap;max-width:100%">
+      <span style="font-size:13px;line-height:1">${emoji}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
+    </span>`;
 
   el.innerHTML = `
     <div class="sec-title">🏆 Competições Mata-Mata <span class="badge">${state.competicoes.length}</span></div>
     ${state.competicoes.length ? state.competicoes.map(c => {
       const podio = calcularPodio(c);
-      const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
-      const expandido = state.competicoesExpandidas.has(c.id);
       const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
+      const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
+
+      // Considera "finalizado" também se o bloco final está marcado como tal
+      const temBlocoFinal = c.tipo === 'personalizado' && (c.blocos || []).some(b => b.ehFinal);
 
       return `
         <div class="card">
-          <div class="card-head" style="cursor:pointer;margin-bottom:0" onclick="toggleCompeticao('${c.id}')">
-            <div style="flex:1;min-width:0">
-              <h3 class="card-title">
-                ${esc(c.nome)}
-                ${c.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
-                ${finalizada ? '<span class="tag tag-ok" style="margin-left:6px">Finalizado</span>' : ''}
-              </h3>
-              <div class="card-sub">${(c.equipes || []).length} equipes · ${(c.partidas || []).length} confrontos</div>
-              <div class="card-sub" style="margin-top:4px">🥇 ${c.pontos1} · 🥈 ${c.pontos2} · 🥉 ${c.pontos3}</div>
-              ${c.editado_por ? `<div class="card-sub" style="margin-top:6px;font-style:italic">Última edição por ${esc(c.editado_por)}</div>` : ''}
-            </div>
-            <span style="font-size:22px;color:var(--txt-3);line-height:1;transition:transform .2s;flex-shrink:0;${expandido ? 'transform:rotate(90deg)' : ''}">›</span>
-          </div>
+          <div class="card-head" style="margin-bottom:0">
+  <div style="flex:1;min-width:0">
+    <h3 class="card-title">
+      ${esc(c.nome)}
+      ${c.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
+      ${finalizada ? '<span class="tag tag-ok" style="margin-left:6px">Finalizado</span>' : ''}
+    </h3>
+    <div class="card-sub">${(c.equipes || []).length} equipes · ${(c.partidas || []).length} confrontos</div>
+    <div class="card-sub" style="margin-top:4px">🥇 ${c.pontos1} · 🥈 ${c.pontos2} · 🥉 ${c.pontos3}</div>
+    ${c.editado_por ? `<div class="card-sub" style="margin-top:6px;font-style:italic">Última edição por ${esc(c.editado_por)}</div>` : ''}
+  </div>
+</div>
 
-          ${expandido ? `
-            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--borda);display:flex;flex-direction:column;gap:6px">
-              ${temResultado ? `
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
-                  <span style="color:#b8860b;font-weight:700">🥇 1º lugar</span>
-                  <span style="font-weight:700">${esc(podio.primeiro)}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
-                  <span style="color:#546e7a;font-weight:700">🥈 2º lugar</span>
-                  <span style="font-weight:700">${esc(podio.segundo)}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
-                  <span style="color:#bf360c;font-weight:700">🥉 3º lugar</span>
-                  <span style="font-weight:700">${esc(podio.terceiro)}</span>
-                </div>
-              ` : '<p style="color:var(--txt-3);font-size:13px;margin:0">Sem resultados lançados.</p>'}
+          ${temResultado ? `
+            <div style="margin-top:14px;padding:10px 12px;background:var(--bg-3);border-radius:10px;
+                        display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              ${podio.primeiro !== '—' ? pillPodio('🥇', podio.primeiro, '#fef3c7', '#92400e') : ''}
+              ${podio.segundo  !== '—' ? pillPodio('🥈', podio.segundo,  '#e2e8f0', '#475569') : ''}
+              ${podio.terceiro !== '—' ? pillPodio('🥉', podio.terceiro, '#fed7aa', '#9a3412') : ''}
             </div>
           ` : ''}
 
@@ -985,7 +988,6 @@ function renderCompeticoes(el) {
   fab.onclick = () => editarCompeticao(null);
   el.appendChild(fab);
 }
-
 /* ---------- MAIS ---------- */
 function renderMais(el) {
   // ============ MAIS DO ADMIN GERAL ============
@@ -1141,14 +1143,37 @@ function calcularPodio(c) {
 
   let primeiro = '—', segundo = '—', terceiro = '—';
 
-  // 3º lugar: pega direto quem tem isTerceiro=true
+  // ---- PERSONALIZADO: usa os blocos marcados como final/3º ----
+  if (c.tipo === 'personalizado') {
+    const blocos = c.blocos || [];
+    const blocoFinal = blocos.find(b => b.ehFinal);
+    const blocoTerceiro = blocos.find(b => b.ehTerceiro);
+
+    if (blocoFinal) {
+      const finais = partidas
+        .filter(p => p.blocoId === blocoFinal.id && p.vencedor && p.equipeA && p.equipeB)
+        .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
+      const final = finais[0];
+      if (final) {
+        primeiro = nome(final.vencedor);
+        segundo = nome(final.vencedor === final.equipeA ? final.equipeB : final.equipeA);
+      }
+    }
+    if (blocoTerceiro) {
+      const terceiros = partidas
+        .filter(p => p.blocoId === blocoTerceiro.id && p.vencedor)
+        .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
+      const terc = terceiros[0];
+      if (terc) terceiro = nome(terc.vencedor);
+    }
+    return { primeiro, segundo, terceiro };
+  }
+
+  // ---- Tradicional (mata-mata e grupos_mata_mata) ----
   const terc = partidas.find(p => p.isTerceiro && !p.grupo && p.vencedor);
   if (terc) terceiro = nome(terc.vencedor);
 
-  // Mata-mata (sem grupo, sem ser 3º lugar)
   const matamata = partidas.filter(p => !p.grupo && !p.isTerceiro);
-
-  // A final é a partida do mata-mata com MAIOR rodada
   if (matamata.length) {
     let final = null;
     matamata.forEach(p => {
@@ -1156,7 +1181,6 @@ function calcularPodio(c) {
         final = p;
       }
     });
-
     if (final && final.vencedor && final.equipeA && final.equipeB) {
       primeiro = nome(final.vencedor);
       segundo = nome(final.vencedor === final.equipeA ? final.equipeB : final.equipeA);
@@ -1165,7 +1189,6 @@ function calcularPodio(c) {
 
   return { primeiro, segundo, terceiro };
 }
-
 /* ============ EXPORTAR CLASSIFICAÇÃO ============ */
 window.exportarPDF = function() {
   if (!state.classificacao.length) { toast('Sem dados para exportar', true); return; }
@@ -1570,6 +1593,7 @@ window.editarCompeticao = function(id) {
         <select name="tipo" id="selTipo" ${c ? 'disabled' : ''}>
           <option value="mata_mata" ${tipoInicial === 'mata_mata' ? 'selected' : ''}>🏆 Mata-Mata</option>
           <option value="grupos_mata_mata" ${tipoInicial === 'grupos_mata_mata' ? 'selected' : ''}>🌍 Grupos + Mata-Mata</option>
+          <option value="personalizado" ${tipoInicial === 'personalizado' ? 'selected' : ''}>🎨 Personalizado (livre)</option>
         </select>
         ${c ? '<small style="display:block;margin-top:4px;color:var(--txt-3);font-size:11.5px">O tipo não pode ser alterado depois de criado.</small>' : ''}
       </label>
@@ -1722,6 +1746,317 @@ window.revelarCompeticao = async function(id) {
     toast('Competição revelada!');
   } catch (e) { toast(e.message, true); }
 };
+/* ============================================================
+   MONTAR CHAVE MANUALMENTE
+   ------------------------------------------------------------
+   Abre um editor onde o admin escolhe quem enfrenta quem na
+   PRIMEIRA RODADA. As fases seguintes são preenchidas
+   automaticamente conforme os vencedores são definidos.
+
+   Suporta os dois tipos de competição:
+     - mata_mata:         equipes = as inscritas
+     - grupos_mata_mata:  equipes = os classificados de cada grupo
+                          (respeita config.classificadosPorGrupo)
+   ============================================================ */
+/* ============================================================
+   MONTAR CHAVE MANUALMENTE (com byes)
+   ------------------------------------------------------------
+   Para N equipes:
+     - Q = maior potência de 2 ≤ N
+     - numConfrontos = N - Q  → play-in (elimina 1 por jogo)
+     - numByes       = 2*Q - N → avançam direto à próxima fase
+
+   A UI mostra:
+     - Bloco "Confrontos preliminares": N-Q pares de selects
+     - Bloco "Avançam direto (bye)":   2Q-N selects únicos
+   Todas as equipes precisam ser alocadas em um lugar OU no outro.
+   ============================================================ */
+/* ============================================================
+   MONTAR CHAVE MANUALMENTE (com byes)
+   ------------------------------------------------------------
+   Para N equipes:
+     - Q = maior potência de 2 ≤ N
+     - numConfrontos = N - Q  → play-in (elimina 1 por jogo)
+     - numByes       = 2*Q - N → avançam direto à próxima fase
+
+   SEMPRE renderiza exatamente numConfrontos + numByes linhas,
+   independente do que já estava salvo. Só pré-preenche os valores
+   quando a competição já tem uma chave montada antes.
+   ============================================================ */
+window.abrirMontarChave = function(id) {
+  const c = state.competicoes.find(x => x.id === id);
+  if (!c) return;
+
+  // ---------- 1. Quais equipes podem entrar na chave? ----------
+  let equipesPermitidas;
+  if (c.tipo === 'mata_mata') {
+    equipesPermitidas = state.equipes.filter(e => c.equipes.includes(e.id));
+  } else {
+    const qualificadosIds = [];
+    const n = c.config?.classificadosPorGrupo || 2;
+    (c.grupos || []).forEach(g => {
+      g.classificacao.slice(0, n).forEach(cls => {
+        qualificadosIds.push(cls.equipeId);
+      });
+    });
+    equipesPermitidas = state.equipes.filter(e => qualificadosIds.includes(e.id));
+  }
+
+  const N = equipesPermitidas.length;
+  if (N < 2) {
+    toast('Não há equipes suficientes para montar a chave', true);
+    return;
+  }
+
+  // ---------- 2. Calcula byes e confrontos ----------
+  let Q = 1;
+  while (Q * 2 <= N) Q *= 2;
+  const numByes       = 2 * Q - N;
+  const numConfrontos = N - Q;
+
+  // ---------- 3. Lê pré-preenchimento (se houver chave antiga) ----------
+  const partidasR1 = (c.partidas || [])
+    .filter(p => !p.grupo && !p.isTerceiro && p.rodada === 1)
+    .sort((a, b) => a.posicao - b.posicao);
+
+  const confrontosIniciais = [];
+  const byesIniciais = [];
+  partidasR1.forEach(p => {
+    if (p.equipeA && p.equipeB) {
+      confrontosIniciais.push({ equipeA: p.equipeA, equipeB: p.equipeB });
+    } else if (p.equipeA && !p.equipeB) {
+      byesIniciais.push(p.equipeA);
+    } else if (!p.equipeA && p.equipeB) {
+      byesIniciais.push(p.equipeB);
+    }
+  });
+
+  // ---------- 4. HTML ----------
+  const opcoesEquipe = equipesPermitidas
+    .map(e => `<option value="${e.id}">${esc(e.nome)}</option>`)
+    .join('');
+
+  // Gera EXATAMENTE numConfrontos linhas
+  let linhasConfrontos = '';
+  for (let i = 0; i < numConfrontos; i++) {
+    linhasConfrontos += `
+      <div class="fieldset" style="margin-top:10px">
+        <div style="font-size:12px;color:var(--txt-3);font-weight:700;
+                    text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">
+          Confronto ${i + 1}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
+          <select class="conf-a" data-idx="${i}">
+            <option value="">— Equipe A —</option>
+            ${opcoesEquipe}
+          </select>
+          <span style="font-weight:700;color:var(--txt-3)">×</span>
+          <select class="conf-b" data-idx="${i}">
+            <option value="">— Equipe B —</option>
+            ${opcoesEquipe}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+
+  // Gera EXATAMENTE numByes linhas
+  let linhasByes = '';
+  for (let i = 0; i < numByes; i++) {
+    linhasByes += `
+      <div class="fieldset" style="margin-top:10px">
+        <select class="bye" data-idx="${i}">
+          <option value="">— Escolha a equipe —</option>
+          ${opcoesEquipe}
+        </select>
+      </div>
+    `;
+  }
+
+  const body = openModal('Montar chave — ' + c.nome, `
+    <div style="background:var(--bg-3);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--txt-2)">
+      <strong>${N} equipes</strong> ·
+      ${numConfrontos} confronto(s) preliminar(es)${numByes ? ` + ${numByes} equipe(s) com bye` : ''}
+      ${numByes ? `<div style="font-size:12px;color:var(--txt-3);margin-top:4px">
+        Quem ficar de bye pula a fase preliminar e entra direto na próxima.
+      </div>` : ''}
+    </div>
+
+    <div style="font-size:12px;color:var(--txt-3);font-weight:700;
+                text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">
+      Confrontos preliminares
+    </div>
+    <div id="listaConfrontos">
+      ${linhasConfrontos || '<p style="color:var(--txt-3);font-size:12px;margin:6px 0 0">Nenhum confronto preliminar (N é potência de 2).</p>'}
+    </div>
+
+    ${numByes > 0 ? `
+      <div style="font-size:12px;color:var(--txt-3);font-weight:700;
+                  text-transform:uppercase;letter-spacing:1px;margin-top:18px;margin-bottom:6px">
+        Avançam direto (bye)
+      </div>
+      ${linhasByes}
+    ` : ''}
+
+    <div style="margin-top:16px;padding:10px 12px;background:var(--bg-3);
+                border-radius:10px;font-size:12.5px;color:var(--txt-3)">
+      💡 Cada equipe só pode aparecer 1 vez. Escolher num lugar remove dos outros.
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn" id="btnSalvarChave">Salvar chave</button>
+    </div>
+  `);
+
+  // ---------- 5. Pré-seleciona valores salvos (se houver) ----------
+  body.querySelectorAll('.conf-a').forEach((sel, i) => {
+    if (confrontosIniciais[i]?.equipeA) sel.value = confrontosIniciais[i].equipeA;
+  });
+  body.querySelectorAll('.conf-b').forEach((sel, i) => {
+    if (confrontosIniciais[i]?.equipeB) sel.value = confrontosIniciais[i].equipeB;
+  });
+  body.querySelectorAll('.bye').forEach((sel, i) => {
+    if (byesIniciais[i]) sel.value = byesIniciais[i];
+  });
+
+  // ---------- 6. Anti-duplicidade ----------
+  const todosSelects = Array.from(body.querySelectorAll('select'));
+  todosSelects.forEach(sel => {
+    sel.addEventListener('change', () => {
+      const v = sel.value;
+      if (!v) return;
+      todosSelects.forEach(outra => {
+        if (outra !== sel && outra.value === v) outra.value = '';
+      });
+    });
+  });
+
+  // ---------- 7. Salvar ----------
+  body.querySelector('#btnSalvarChave').onclick = async () => {
+    const confrontos = [];
+    for (let i = 0; i < numConfrontos; i++) {
+      const a = body.querySelector(`.conf-a[data-idx="${i}"]`).value;
+      const b = body.querySelector(`.conf-b[data-idx="${i}"]`).value;
+      if (!a || !b) { toast(`Preencha o confronto ${i + 1}`, true); return; }
+      if (a === b)  { toast(`Equipe repetida no confronto ${i + 1}`, true); return; }
+      confrontos.push({ equipeA: a, equipeB: b });
+    }
+
+    const byes = [];
+    for (let i = 0; i < numByes; i++) {
+      const b = body.querySelector(`.bye[data-idx="${i}"]`).value;
+      if (!b) { toast(`Escolha a equipe com bye ${i + 1}`, true); return; }
+      byes.push(b);
+    }
+
+    try {
+      await api('POST', '/competicoes/' + id + '/montar-chave', { confrontos, byes });
+      closeModal();
+      await carregarDados();
+      abrirChaves(id);
+      toast('Chave montada!');
+    } catch (e) {
+      toast(e.message, true);
+    }
+  };
+};
+
+/* ============================================================
+   ESCOLHER EQUIPES DO GRUPO
+   ------------------------------------------------------------
+   Abre um modal com checkboxes. O usuário marca quem joga no
+   grupo, clica em Salvar, e o sistema gera a tabela
+   todos-contra-todos automaticamente.
+   ============================================================ */
+window.abrirEscolherEquipesGrupo = function(id, bid) {
+  const c = state.competicoes.find(x => x.id === id);
+  if (!c) return;
+  const b = (c.blocos || []).find(x => x.id === bid);
+  if (!b) return;
+
+  const equipes = state.equipes.filter(e => c.equipes.includes(e.id));
+
+  // Equipes que já estão no bloco (marcadas por padrão)
+  const jaNoBloco = new Set();
+  (c.partidas || []).forEach(p => {
+    if (p.blocoId !== bid) return;
+    if (p.equipeA) jaNoBloco.add(p.equipeA);
+    if (p.equipeB) jaNoBloco.add(p.equipeB);
+  });
+
+  const body = openModal('Equipes do grupo — ' + b.nome, `
+    <p style="margin:0 0 12px;color:var(--txt-3);font-size:13px">
+      Marque as equipes que vão jogar neste grupo. O sistema cria
+      automaticamente todos os confrontos entre elas.
+    </p>
+    ${jaNoBloco.size ? `
+      <p style="margin:0 0 12px;color:var(--warn);font-size:12.5px">
+        ⚠️ Alterar as equipes vai apagar os placares já lançados neste grupo.
+      </p>
+    ` : ''}
+
+    ${equipes.length ? `
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;
+                    color:var(--txt-2);cursor:pointer;margin:0 0 8px">
+        <input type="checkbox" id="marcarTodasEq" style="width:16px;height:16px;margin:0;accent-color:var(--prim)" />
+        Marcar todas
+      </label>
+      <div class="checks">
+        ${equipes.map(e => `
+          <label class="check ${jaNoBloco.has(e.id) ? 'marcado' : ''}">
+            <input type="checkbox" value="${e.id}" ${jaNoBloco.has(e.id) ? 'checked' : ''} />
+            <span>${esc(e.nome)}</span>
+          </label>
+        `).join('')}
+      </div>
+    ` : '<p style="color:var(--txt-3)">Nenhuma equipe inscrita na competição.</p>'}
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn" id="btnSalvarEquipes">Salvar</button>
+    </div>
+  `);
+
+  const checks = Array.from(body.querySelectorAll('.check input'));
+  const marcarTodas = body.querySelector('#marcarTodasEq');
+
+  // Marcar/desmarcar visual
+  checks.forEach(inp => {
+    inp.addEventListener('change', () => {
+      inp.closest('.check').classList.toggle('marcado', inp.checked);
+      if (marcarTodas) {
+        marcarTodas.checked = checks.length > 0 && checks.every(x => x.checked);
+      }
+    });
+  });
+  if (marcarTodas) {
+    marcarTodas.checked = checks.length > 0 && checks.every(x => x.checked);
+    marcarTodas.addEventListener('change', () => {
+      const v = marcarTodas.checked;
+      checks.forEach(x => {
+        x.checked = v;
+        x.closest('.check').classList.toggle('marcado', v);
+      });
+    });
+  }
+
+  body.querySelector('#btnSalvarEquipes').onclick = async () => {
+    const ids = checks.filter(x => x.checked).map(x => x.value);
+    if (ids.length < 2) { toast('Selecione ao menos 2 equipes', true); return; }
+
+    try {
+      const r = await api('POST', '/competicoes/' + id + '/blocos/' + bid + '/gerar-round-robin',
+        { equipeIds: ids });
+
+      await carregarDados();
+      closeModal();
+      abrirEditorBlocos(id);
+      toast(`${r.criados} confronto(s) criado(s)!`);
+    } catch (e) { toast(e.message, true); }
+  };
+};
+
 
 /* ---------- Chaves Mata-Mata ---------- */
 window.abrirChaves = function(id) {
@@ -1760,18 +2095,53 @@ window.abrirChaves = function(id) {
     const cfg = c2.config || {};
     let html = '';
 
+    if (c2.tipo === 'personalizado') {
+  html += `<button class="btn btn-ghost btn-sm" id="btnAvancar">🎯 Preencher mata-mata</button>`;
+  html += `<button class="btn btn-sm" id="btnEditorBlocos">✏️ Editar blocos</button>`;
+  acoesEl.innerHTML = html;
+
+  acoesEl.querySelector('#btnAvancar').onclick = async () => {
+  const temRep = (c2.blocos || []).some(b => b.tipo === 'repescagem');
+  const msg = temRep
+    ? 'Preencher o próximo bloco eliminatório com o 1º de cada grupo + o vencedor da repescagem?'
+    : 'Preencher o próximo bloco eliminatório com os classificados dos grupos?';
+  if (!confirm(msg)) return;
+  try {
+    const r = await api('POST', '/competicoes/' + c2.id + '/preencher-mata-mata',
+      { classificadosPorGrupo: temRep ? 1 : 2 });
+    await carregarDados();
+    closeModal();
+    abrirChaves(c2.id);
+    toast(`${r.confrontos} confronto(s) preenchido(s)!`);
+  } catch (e) { toast(e.message, true); }
+};
+
+  acoesEl.querySelector('#btnEditorBlocos').onclick = () => {
+    closeModal();
+    abrirEditorBlocos(c2.id);
+  };
+  return;
+}
+
     if (c2.tipo === 'grupos_mata_mata' && !cfg.mataMataGerado) {
       html += `<button class="btn btn-ghost btn-sm" id="btnResortear">🎲 Sortear grupos</button>`;
       html += `<button class="btn btn-sm" id="btnGerarMata">⚔️ Gerar mata-mata</button>`;
     }
-    if (c2.tipo === 'mata_mata') {
-      html += `<button class="btn btn-ghost btn-sm" id="btnRegerar">🔄 Regerar</button>`;
+    if (c2.tipo === 'grupos_mata_mata' && cfg.mataMataGerado) {
+      // Permite re-montar o mata-mata depois de gerado
+      html += `<button class="btn btn-ghost btn-sm" id="btnMontar">✏️ Remontar manualmente</button>`;
     }
+    if (c2.tipo === 'mata_mata') {
+      html += `<button class="btn btn-ghost btn-sm" id="btnMontar">✏️ Montar manualmente</button>`;
+      html += `<button class="btn btn-ghost btn-sm" id="btnRegerar">🎲 Sortear aleatório</button>`;
+}
     acoesEl.innerHTML = html;
 
     const btnR = acoesEl.querySelector('#btnRegerar');
+    const btnM = acoesEl.querySelector('#btnMontar');
     const btnS = acoesEl.querySelector('#btnResortear');
     const btnG = acoesEl.querySelector('#btnGerarMata');
+    
 
     if (btnR) {
       btnR.onclick = async () => {
@@ -1784,6 +2154,14 @@ window.abrirChaves = function(id) {
           renderPodio();
           toast('Chave regerada');
         } catch (e) { toast(e.message, true); }
+      };
+    }
+    if (btnM) {
+      btnM.onclick = () => {
+        // Fecha o modal de Chaves e abre o editor.
+        // (Não dá pra ter dois modais empilhados com o setup atual.)
+        closeModal();
+        abrirMontarChave(c2.id);
       };
     }
 
@@ -1818,6 +2196,176 @@ window.abrirChaves = function(id) {
 
   /* ====== BLOCO: GRUPOS ====== */
   let grupoAtivo = null;  // variável de estado do modal
+
+  /* ====== BLOCO: PERSONALIZADO (blocos livres) ====== */
+/* ====== BLOCO: PERSONALIZADO (blocos livres) ====== */
+function renderPersonalizado() {
+  const c2 = state.competicoes.find(x => x.id === id);
+  const blocos = (c2.blocos || []).slice().sort((a, b) => a.ordem - b.ordem);
+  if (!blocos.length) {
+    blocoGrupos.innerHTML = '';
+    blocoMataMata.innerHTML = '<div class="empty"><p>Nenhum bloco criado ainda.</p></div>';
+    return;
+  }
+
+  const partidasPorBloco = {};
+  (c2.partidas || []).forEach(p => {
+    if (!p.blocoId) return;
+    if (!partidasPorBloco[p.blocoId]) partidasPorBloco[p.blocoId] = [];
+    partidasPorBloco[p.blocoId].push(p);
+  });
+
+  const SIGLAS = {
+    P: 'Partidas', V: 'Vitórias', E: 'Empates', D: 'Derrotas',
+    GP: 'Gols Pró', GC: 'Gols Contra', SG: 'Saldo', PTS: 'Pontos'
+  };
+
+  let html = '';
+  blocos.forEach(b => {
+    const partidas = (partidasPorBloco[b.id] || []).sort((a, bb) => a.posicao - bb.posicao);
+    const iconeBloco =
+      b.tipo === 'grupo'      ? '🌍' :
+      b.tipo === 'repescagem' ? '🔁' : '⚔️';
+    html += `<div class="fase-tag" style="margin-top:22px">${iconeBloco} ${esc(b.nome)}</div>`;
+
+    /* ==================== BLOCO TIPO GRUPO OU REPESCAGEM ==================== */
+    if (b.tipo === 'grupo' || b.tipo === 'repescagem') {
+      // --- Tabela de classificação ---
+      const cfg = Object.assign({ pontosVitoria: 3, pontosEmpate: 1 }, b.config || {});
+      const idsSet = new Set();
+      partidas.forEach(p => { if (p.equipeA) idsSet.add(p.equipeA); if (p.equipeB) idsSet.add(p.equipeB); });
+
+      const mapa = new Map();
+      Array.from(idsSet).forEach(eid => mapa.set(eid, { equipeId: eid, P:0,V:0,E:0,D:0,GP:0,GC:0,SG:0,PTS:0 }));
+      partidas.forEach(p => {
+        if (!p.equipeA || !p.equipeB) return;
+        if (p.golsA === null || p.golsB === null || p.golsA === undefined || p.golsB === undefined) return;
+        const a = mapa.get(p.equipeA), bb = mapa.get(p.equipeB);
+        if (!a || !bb) return;
+        a.P++; bb.P++;
+        a.GP += p.golsA; a.GC += p.golsB;
+        bb.GP += p.golsB; bb.GC += p.golsA;
+        if (p.golsA > p.golsB) { a.V++; a.PTS += cfg.pontosVitoria; bb.D++; }
+        else if (p.golsA < p.golsB) { bb.V++; bb.PTS += cfg.pontosVitoria; a.D++; }
+        else { a.E++; bb.E++; a.PTS += cfg.pontosEmpate; bb.PTS += cfg.pontosEmpate; }
+      });
+      const classif = Array.from(mapa.values()).map(x => ({ ...x, SG: x.GP - x.GC }))
+        .sort((x,y) => y.PTS - x.PTS || y.SG - x.SG || y.GP - x.GP);
+
+      const rows = classif.map((cls, i) => `
+        <tr>
+          <td style="padding:8px 6px">${i+1}º</td>
+          <td style="padding:8px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px">${esc(nomeEquipe(cls.equipeId))}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.P}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.V}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.E}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.D}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.GP}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.GC}</td>
+          <td style="padding:8px 6px;text-align:center">${cls.SG >= 0 ? '+' : ''}${cls.SG}</td>
+          <td style="padding:8px 6px;text-align:center;font-weight:800">${cls.PTS}</td>
+        </tr>`).join('');
+
+      html += `
+        <div style="overflow-x:auto;margin-top:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px">
+            <thead><tr style="background:var(--bg-3);color:var(--txt-3);text-transform:uppercase;font-size:10.5px">
+              <th style="padding:8px 6px;text-align:left">#</th>
+              <th style="padding:8px 6px;text-align:left">Equipe</th>
+              ${Object.keys(SIGLAS).map(s => `<th style="padding:8px 6px" title="${SIGLAS[s]}">${s}</th>`).join('')}
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+
+      // --- Inputs de placar (AQUI é onde estava faltando) ---
+      const partidasHTML = partidas.map(p => {
+        const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
+        const nomeB = p.equipeB ? nomeEquipe(p.equipeB) : '—';
+        const gA = (p.golsA === null || p.golsA === undefined) ? '' : p.golsA;
+        const gB = (p.golsB === null || p.golsB === undefined) ? '' : p.golsB;
+        return `
+          <div class="partida-grupo" style="display:grid;grid-template-columns:1fr 60px 20px 60px 1fr;gap:10px;align-items:center;margin-top:10px">
+            <div style="text-align:right;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nomeA)}</div>
+            <input type="number" min="0" value="${gA}" data-pid="${p.id}" data-lado="a" class="placar-input"
+                   style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
+            <div style="text-align:center;font-weight:700;color:var(--txt-3);font-size:15px">×</div>
+            <input type="number" min="0" value="${gB}" data-pid="${p.id}" data-lado="b" class="placar-input"
+                   style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
+            <div style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nomeB)}</div>
+          </div>`;
+      }).join('');
+
+      html += `
+        <div style="margin-top:14px;padding:16px;background:var(--bg-3);border-radius:12px">
+          <div style="font-size:12px;font-weight:700;color:var(--txt-3);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">⚽ Placar</div>
+          <div style="font-size:12px;color:var(--txt-3);margin-bottom:4px">Lance o placar de cada partida. A tabela acima atualiza sozinha.</div>
+          ${partidasHTML}
+        </div>`;
+    }
+
+    /* ==================== BLOCO TIPO ELIMINATÓRIA ==================== */
+    if (b.tipo === 'eliminatoria') {
+      partidas.forEach(p => {
+        const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
+        const nomeB = p.equipeB ? nomeEquipe(p.equipeB) : '—';
+        const classeA = p.vencedor === p.equipeA && p.equipeA ? 'venc' : '';
+        const classeB = p.vencedor === p.equipeB && p.equipeB ? 'venc' : '';
+        const emptyA = !p.equipeA ? 'vazio' : '';
+        const emptyB = !p.equipeB ? 'vazio' : '';
+        const podeClique = !!(p.equipeA && p.equipeB) && b.tipo === 'eliminatoria';
+        const disA = !podeClique ? 'disabled' : '';
+        const disB = !podeClique ? 'disabled' : '';
+        html += `
+          <div class="matchup">
+            <button class="time-btn ${classeA} ${emptyA}" data-pid="${p.id}" data-venc="${p.equipeA}" data-atual="${p.vencedor}" ${disA}>${esc(nomeA)}</button>
+            <span class="matchup-x">×</span>
+            <button class="time-btn ${classeB} ${emptyB}" data-pid="${p.id}" data-venc="${p.equipeB}" data-atual="${p.vencedor}" ${disB}>${esc(nomeB)}</button>
+          </div>`;
+      });
+    }
+  });
+
+  blocoGrupos.innerHTML = '';
+  blocoMataMata.innerHTML = html;
+
+  // --- Listeners dos placares (blocos tipo grupo) ---
+  blocoMataMata.querySelectorAll('.placar-input').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const pid = inp.dataset.pid;
+      const tr = inp.closest('.partida-grupo');
+      const inA = tr.querySelector('input[data-lado="a"]');
+      const inB = tr.querySelector('input[data-lado="b"]');
+      const golsA = inA.value === '' ? null : Number(inA.value);
+      const golsB = inB.value === '' ? null : Number(inB.value);
+      try {
+        await api('PUT', '/competicoes/' + id + '/partidas/' + pid + '/placar', { golsA, golsB });
+        await carregarDados();
+        const modalBody = body.closest('.modal-body');
+        const scrollAntes = modalBody ? modalBody.scrollTop : 0;
+        renderPersonalizado();
+        if (modalBody) modalBody.scrollTop = scrollAntes;
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+
+  // --- Listeners dos vencedores (blocos tipo eliminatória) ---
+  blocoMataMata.querySelectorAll('.time-btn').forEach(btn => {
+    if (btn.disabled) return;
+    btn.onclick = async () => {
+      const pid = btn.dataset.pid;
+      const venc = btn.dataset.venc;
+      const atual = btn.dataset.atual;
+      const novo = atual === venc ? '' : venc;
+      try {
+        await api('PUT', '/competicoes/' + id + '/partidas/' + pid + '/vencedor', { vencedor: novo });
+        await carregarDados();
+        renderPersonalizado();
+        renderPodio();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+}
 
   function renderGrupos() {
     const c2 = state.competicoes.find(x => x.id === id);
@@ -2060,36 +2608,406 @@ window.abrirChaves = function(id) {
 
   /* ====== PÓDIO ====== */
   function renderPodio() {
-    const c3 = state.competicoes.find(x => x.id === id);
-    const podio = calcularPodio(c3);
-    podioEl.innerHTML = `
-      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#b8860b;font-weight:700">🥇 1º lugar (${c3.pontos1} pts)</span><span>${esc(podio.primeiro)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#546e7a;font-weight:700">🥈 2º lugar (${c3.pontos2} pts)</span><span>${esc(podio.segundo)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#bf360c;font-weight:700">🥉 3º lugar (${c3.pontos3} pts)</span><span>${esc(podio.terceiro)}</span></div>
-    `;
+  const c3 = state.competicoes.find(x => x.id === id);
+  if (c3.tipo === 'personalizado') {
+    podioEl.style.display = 'none';
+    return;
   }
+  podioEl.style.display = 'block';
+  const podio = calcularPodio(c3);
+  podioEl.innerHTML = `
+    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#b8860b;font-weight:700">🥇 1º lugar (${c3.pontos1} pts)</span><span>${esc(podio.primeiro)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#546e7a;font-weight:700">🥈 2º lugar (${c3.pontos2} pts)</span><span>${esc(podio.segundo)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#bf360c;font-weight:700">🥉 3º lugar (${c3.pontos3} pts)</span><span>${esc(podio.terceiro)}</span></div>
+  `;
+}
 
   /* ====== RENDER PRINCIPAL ====== */
   function render() {
-    const c2 = state.competicoes.find(x => x.id === id);
-    if (c2.tipo === 'grupos_mata_mata') {
-      renderGrupos();
-      const cfg = c2.config || {};
-      if (cfg.mataMataGerado) {
-        renderMataMata();
-      } else {
-        blocoMataMata.innerHTML = '';
-      }
-    } else {
-      blocoGrupos.innerHTML = '';
-      renderMataMata();
-    }
+  const c2 = state.competicoes.find(x => x.id === id);
+  if (c2.tipo === 'personalizado') {
+    blocoGrupos.innerHTML = '';
+    renderPersonalizado();
+    return;
   }
+  if (c2.tipo === 'grupos_mata_mata') {
+    renderGrupos();
+    const cfg = c2.config || {};
+    if (cfg.mataMataGerado) {
+      renderMataMata();
+    } else {
+      blocoMataMata.innerHTML = '';
+    }
+  } else {
+    blocoGrupos.innerHTML = '';
+    renderMataMata();
+  }
+}
 
   renderAcoes();
   render();
   renderPodio();
 };
+
+/* ============================================================
+   EDITOR DE BLOCOS — competições personalizadas
+   ------------------------------------------------------------
+   Bloco tipo "Grupo":     escolhe as equipes → round-robin automático
+   Bloco tipo "Eliminatória": adiciona confrontos um a um
+   ============================================================ */
+window.abrirEditorBlocos = function(id) {
+  const c = state.competicoes.find(x => x.id === id);
+  if (!c) return;
+
+  const equipes = state.equipes.filter(e => c.equipes.includes(e.id));
+
+  const blocos = (c.blocos || []).slice().sort((a, b) => a.ordem - b.ordem);
+  const partidasPorBloco = {};
+  (c.partidas || []).forEach(p => {
+    if (!p.blocoId) return;
+    if (!partidasPorBloco[p.blocoId]) partidasPorBloco[p.blocoId] = [];
+    partidasPorBloco[p.blocoId].push(p);
+  });
+  Object.values(partidasPorBloco).forEach(arr => arr.sort((a, b) => a.posicao - b.posicao));
+
+  let blocosHTML = '';
+  blocos.forEach(b => {
+    const partidas = partidasPorBloco[b.id] || [];
+
+    // ------- Equipes do bloco (só pra grupo) -------
+        // ------- Equipes do bloco (grupo OU repescagem) -------
+    let equipesDoBlocoHTML = '';
+    if (b.tipo === 'grupo' || b.tipo === 'repescagem'){
+      const idsSet = new Set();
+      partidas.forEach(p => {
+        if (p.equipeA) idsSet.add(p.equipeA);
+        if (p.equipeB) idsSet.add(p.equipeB);
+      });
+      const ids = Array.from(idsSet);
+      if (!ids.length) {
+        equipesDoBlocoHTML = '<p style="color:var(--txt-3);font-size:12.5px;margin:10px 0 0">Nenhuma equipe adicionada ainda.</p>';
+      } else {
+        equipesDoBlocoHTML = `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+            ${ids.map(eid => {
+              const eq = state.equipes.find(e => e.id === eid);
+              const nome = eq ? eq.nome : '—';
+              return `<span class="chip" style="background:var(--prim-cla);color:var(--prim-esc);font-weight:600">${esc(nome)}</span>`;
+            }).join('')}
+          </div>`;
+      }
+    }
+
+    // ------- Confrontos (só pra eliminatória) -------
+    let confrontosHTML = '';
+    if (b.tipo === 'eliminatoria') {
+      confrontosHTML = `
+        <div class="bloco-partidas">
+          ${partidas.map(p => `
+            <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:6px;align-items:center;margin-top:6px" data-pid="${p.id}">
+              <select class="part-eqA" style="margin:0">
+                <option value="">— Equipe A —</option>
+                ${equipes.map(e => `<option value="${e.id}" ${p.equipeA === e.id ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
+              </select>
+              <span style="font-weight:700;color:var(--txt-3)">×</span>
+              <select class="part-eqB" style="margin:0">
+                <option value="">— Equipe B —</option>
+                ${equipes.map(e => `<option value="${e.id}" ${p.equipeB === e.id ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
+              </select>
+              <button class="btn btn-danger btn-sm btn-excluir-partida" data-pid="${p.id}">×</button>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+
+    // ------- Botões de ação -------
+        // ------- Botões de ação -------
+    let botoesHTML = '';
+    if (b.tipo === 'grupo') {
+      botoesHTML = `
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-escolher-equipes" data-bid="${b.id}">
+            👥 ${partidas.length ? 'Editar equipes' : 'Adicionar equipes'}
+          </button>
+        </div>`;
+    } else if (b.tipo === 'repescagem') {
+      botoesHTML = `
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-popular-repescagem" data-bid="${b.id}">
+            ⬇️ Popular com 2ºs colocados
+          </button>
+        </div>`;
+    } else {
+      botoesHTML = `
+        <button class="btn btn-ghost btn-sm btn-add-partida" data-bid="${b.id}" style="margin-top:10px">+ Confronto</button>`;
+    }
+
+    blocosHTML += `
+      <div class="card" style="padding:14px;margin-bottom:12px" data-bloco="${b.id}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <input class="bloco-nome" value="${esc(b.nome)}" maxlength="40"
+                 style="font-weight:700;font-size:15px;flex:1;min-width:140px" />
+          <select class="bloco-tipo" style="width:auto;margin:0">
+            <option value="eliminatoria" ${b.tipo === 'eliminatoria' ? 'selected' : ''}>Eliminatória</option>
+            <option value="grupo" ${b.tipo === 'grupo' ? 'selected' : ''}>Grupo (tabela)</option>
+            <option value="repescagem" ${b.tipo === 'repescagem' ? 'selected' : ''}>Repescagem</option>
+          </select>
+          <button class="btn btn-danger btn-sm btn-excluir-bloco" data-bid="${b.id}">Excluir</button>
+        </div>
+
+        <div style="display:flex;gap:12px;font-size:12px;color:var(--txt-3);margin-bottom:8px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:4px;margin:0;font-weight:400;font-size:12px">
+            <input type="checkbox" class="bloco-final" ${b.ehFinal ? 'checked' : ''} style="width:auto;margin:0" />
+            É a final (define 1º e 2º)
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;margin:0;font-weight:400;font-size:12px">
+            <input type="checkbox" class="bloco-terceiro" ${b.ehTerceiro ? 'checked' : ''} style="width:auto;margin:0" />
+            É a disputa de 3º
+          </label>
+        </div>
+
+        ${equipesDoBlocoHTML}
+        ${confrontosHTML}
+        ${botoesHTML}
+      </div>
+    `;
+  });
+
+  const body = openModal('Editor de blocos — ' + c.nome, `
+    <div style="background:var(--bg-3);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12.5px;color:var(--txt-2)">
+      Monte o torneio do seu jeito. Em blocos tipo <strong>Grupo</strong>, escolha as equipes e o sistema cria os confrontos.
+      Em blocos tipo <strong>Eliminatória</strong>, adicione confrontos e escolha quem avança em cada um.
+    </div>
+
+        <div id="listaBlocos">${blocosHTML || '<div class="empty"><p>Nenhum bloco ainda. Clique abaixo para começar.</p></div>'}</div>
+
+    <div id="formNovoBloco" style="display:none;margin-top:12px;padding:14px;
+         background:var(--bg-3);border:1px solid var(--borda);border-radius:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--txt-3);
+                  text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">
+        Novo bloco
+      </div>
+
+      <label style="font-size:13px;font-weight:600;color:var(--txt-2)">
+        Nome
+        <input id="novoBlocoNome" maxlength="40"
+               placeholder="Ex: Grupo A, Repescagem, Semifinal, Final"
+               style="margin-top:4px" />
+      </label>
+
+      <div style="font-size:13px;font-weight:600;color:var(--txt-2);margin-top:14px">Tipo</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:6px">
+        <label class="tipo-card" data-tipo="grupo"
+               style="display:flex;flex-direction:column;gap:6px;padding:12px;
+                      background:var(--bg-2);border:2px solid var(--borda);border-radius:10px;
+                      cursor:pointer;text-align:center">
+          <input type="radio" name="novoBlocoTipo" value="grupo" style="display:none" />
+          <span style="font-size:22px">🌍</span>
+          <span style="font-weight:700;font-size:13px">Grupo</span>
+          <span style="font-size:11px;color:var(--txt-3);line-height:1.3">Todos contra todos, com tabela</span>
+        </label>
+
+        <label class="tipo-card" data-tipo="eliminatoria"
+               style="display:flex;flex-direction:column;gap:6px;padding:12px;
+                      background:var(--bg-2);border:2px solid var(--borda);border-radius:10px;
+                      cursor:pointer;text-align:center">
+          <input type="radio" name="novoBlocoTipo" value="eliminatoria" style="display:none" />
+          <span style="font-size:22px">⚔️</span>
+          <span style="font-weight:700;font-size:13px">Eliminatória</span>
+          <span style="font-size:11px;color:var(--txt-3);line-height:1.3">Chave com confrontos manuais</span>
+        </label>
+
+        <label class="tipo-card" data-tipo="repescagem"
+               style="display:flex;flex-direction:column;gap:6px;padding:12px;
+                      background:var(--bg-2);border:2px solid var(--borda);border-radius:10px;
+                      cursor:pointer;text-align:center">
+          <input type="radio" name="novoBlocoTipo" value="repescagem" style="display:none" />
+          <span style="font-size:22px">🔁</span>
+          <span style="font-weight:700;font-size:13px">Repescagem</span>
+          <span style="font-size:11px;color:var(--txt-3);line-height:1.3">Puxa 2ºs colocados</span>
+        </label>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button type="button" class="btn btn-ghost" id="btnCancelarNovoBloco" style="flex:1">Cancelar</button>
+        <button type="button" class="btn" id="btnConfirmarNovoBloco" style="flex:2">Criar bloco</button>
+      </div>
+    </div>
+
+    <button class="btn btn-ghost btn-full" id="btnAddBloco" style="margin-top:8px">+ Novo bloco</button>
+
+    <div class="modal-actions">
+      <button type="button" class="btn" onclick="closeModal()">Fechar</button>
+    </div>
+  `);
+
+  /* ---------- Handlers ---------- */
+
+  async function recarregarEReabrir() {
+    await carregarDados();
+    closeModal();
+    abrirEditorBlocos(id);
+  }
+
+  // Adicionar bloco
+// ---------- Novo bloco (formulário inline) ----------
+const formNovo = body.querySelector('#formNovoBloco');
+const btnAdd = body.querySelector('#btnAddBloco');
+const inputNome = body.querySelector('#novoBlocoNome');
+const cardsTipo = Array.from(body.querySelectorAll('.tipo-card'));
+
+let tipoSelecionado = 'grupo'; // default
+
+function atualizarCards() {
+  cardsTipo.forEach(card => {
+    const sel = card.dataset.tipo === tipoSelecionado;
+    card.style.borderColor = sel ? 'var(--prim)' : 'var(--borda)';
+    card.style.background = sel ? 'var(--prim-cla)' : 'var(--bg-2)';
+    card.querySelector('input[type=radio]').checked = sel;
+  });
+}
+
+function abrirFormNovo() {
+  formNovo.style.display = 'block';
+  btnAdd.style.display = 'none';
+  tipoSelecionado = 'grupo';
+  inputNome.value = '';
+  atualizarCards();
+  setTimeout(() => inputNome.focus(), 50);
+  // Rola pra baixo
+  formNovo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function fecharFormNovo() {
+  formNovo.style.display = 'none';
+  btnAdd.style.display = 'block';
+}
+
+btnAdd.onclick = abrirFormNovo;
+body.querySelector('#btnCancelarNovoBloco').onclick = fecharFormNovo;
+
+cardsTipo.forEach(card => {
+  card.onclick = (e) => {
+    e.preventDefault();
+    tipoSelecionado = card.dataset.tipo;
+    atualizarCards();
+  };
+});
+
+inputNome.addEventListener('keydown', e => {
+  if (e.key === 'Enter') body.querySelector('#btnConfirmarNovoBloco').click();
+});
+
+body.querySelector('#btnConfirmarNovoBloco').onclick = async () => {
+  const nome = inputNome.value.trim();
+  if (!nome) { toast('Informe o nome do bloco', true); inputNome.focus(); return; }
+  try {
+    await api('POST', '/competicoes/' + id + '/blocos', { nome, tipo: tipoSelecionado });
+    await recarregarEReabrir();
+    toast('Bloco criado!');
+  } catch (e) { toast(e.message, true); }
+};
+
+  /* ---------- Handlers dos blocos existentes ---------- */
+  body.querySelectorAll('[data-bloco]').forEach(card => {
+    const bid = card.dataset.bloco;
+
+    // Salvar nome / tipo / flags ao mudar
+    const salvar = async () => {
+      const nome = card.querySelector('.bloco-nome').value.trim();
+      const tipo = card.querySelector('.bloco-tipo').value;
+      const ehFinal = card.querySelector('.bloco-final').checked;
+      const ehTerceiro = card.querySelector('.bloco-terceiro').checked;
+      try {
+        await api('PUT', '/competicoes/' + id + '/blocos/' + bid,
+          { nome, tipo, ehFinal, ehTerceiro });
+        await carregarDados();
+      } catch (e) { toast(e.message, true); }
+    };
+
+    card.querySelector('.bloco-nome').addEventListener('blur', salvar);
+    card.querySelector('.bloco-tipo').addEventListener('change', salvar);
+    card.querySelector('.bloco-final').addEventListener('change', salvar);
+    card.querySelector('.bloco-terceiro').addEventListener('change', salvar);
+
+    // Excluir bloco
+    const btnExcluir = card.querySelector('.btn-excluir-bloco');
+    if (btnExcluir) {
+      btnExcluir.onclick = async () => {
+        if (!confirm('Excluir este bloco e todos os confrontos dele?')) return;
+        try {
+          await api('DELETE', '/competicoes/' + id + '/blocos/' + bid);
+          await recarregarEReabrir();
+          toast('Bloco excluído');
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+
+    // Botão "Escolher equipes" (bloco tipo Grupo)
+    const btnEquipes = card.querySelector('.btn-escolher-equipes');
+    if (btnEquipes) {
+      btnEquipes.onclick = () => abrirEscolherEquipesGrupo(id, bid);
+    }
+
+    // Botão "+ Confronto" (bloco tipo Eliminatória)
+    const btnAdd = card.querySelector('.btn-add-partida');
+    if (btnAdd) {
+      btnAdd.onclick = async () => {
+        try {
+          await api('POST', '/competicoes/' + id + '/blocos/' + bid + '/partidas', {});
+          await recarregarEReabrir();
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+        // Botão "Popular repescagem" (bloco tipo Repescagem)
+    const btnPopular = card.querySelector('.btn-popular-repescagem');
+    if (btnPopular) {
+      btnPopular.onclick = async () => {
+        if (!confirm('Puxar o 2º colocado de cada grupo e gerar os confrontos da repescagem?\n\nOs placares da repescagem serão apagados.')) return;
+        try {
+          const r = await api('POST', '/competicoes/' + id + '/blocos/' + bid + '/popular-repescagem', { posicao: 2 });
+          await carregarDados();
+          closeModal();
+          abrirEditorBlocos(id);
+          toast(`${r.criados} confronto(s) com ${r.equipes} equipe(s)`);
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+
+    // Linhas de partida (blocos eliminatórios)
+    card.querySelectorAll('[data-pid]').forEach(linha => {
+      const pid = linha.dataset.pid;
+      const selA = linha.querySelector('.part-eqA');
+      const selB = linha.querySelector('.part-eqB');
+      const btnX = linha.querySelector('.btn-excluir-partida');
+      if (!selA || !selB || !btnX) return;
+
+      const salvarPartida = async () => {
+        const equipeA = selA.value;
+        const equipeB = selB.value;
+        if (equipeA && equipeB && equipeA === equipeB) {
+          toast('Uma equipe não pode enfrentar a si mesma', true);
+          return;
+        }
+        try {
+          await api('PUT', '/competicoes/' + id + '/partidas/' + pid, { equipeA, equipeB });
+          await carregarDados();
+        } catch (e) { toast(e.message, true); }
+      };
+
+      selA.addEventListener('change', salvarPartida);
+      selB.addEventListener('change', salvarPartida);
+
+      btnX.onclick = async () => {
+        try {
+          await api('DELETE', '/competicoes/' + id + '/partidas/' + pid);
+          await recarregarEReabrir();
+        } catch (e) { toast(e.message, true); }
+      };
+    });
+  });
+};
+
 
 /* ============================================================
    PENALIDADES
