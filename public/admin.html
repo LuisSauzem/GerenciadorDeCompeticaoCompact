@@ -1224,6 +1224,7 @@ function calcularPodio(c) {
   let primeiro = '—', segundo = '—', terceiro = '—';
 
   // ---- PERSONALIZADO: usa os blocos marcados como final/3º ----
+    // ---- PERSONALIZADO: usa os blocos marcados como final/3º ----
   if (c.tipo === 'personalizado') {
     const blocos = c.blocos || [];
     const blocoFinal = blocos.find(b => b.ehFinal);
@@ -1246,12 +1247,27 @@ function calcularPodio(c) {
       const terc = terceiros[0];
       if (terc) terceiro = nome(terc.vencedor);
     }
+
+    // ⬇️ NOVO — config.terceiroColocado tem prioridade sobre o bloco
+    const cfgLocal = typeof c.config === 'string'
+      ? (() => { try { return JSON.parse(c.config); } catch { return {}; } })()
+      : (c.config || {});
+    if (cfgLocal.terceiroColocado) {
+      terceiro = nome(cfgLocal.terceiroColocado);
+    }
+    // ⬆️
+
     return { primeiro, segundo, terceiro };
   }
 
-  // ---- Tradicional (mata-mata e grupos_mata_mata) ----
-  const terc = partidas.find(p => p.isTerceiro && !p.grupo && p.vencedor);
-  if (terc) terceiro = nome(terc.vencedor);
+    // ---- Tradicional (mata-mata e grupos_mata_mata) ----
+    // Prioridade: config.terceiroColocado (definido manualmente no modal)
+    if (c.config?.terceiroColocado) {
+      terceiro = nome(c.config.terceiroColocado);
+    } else {
+      const terc = partidas.find(p => p.isTerceiro && !p.grupo && p.vencedor);
+      if (terc) terceiro = nome(terc.vencedor);
+    }
 
   const matamata = partidas.filter(p => !p.grupo && !p.isTerceiro);
   if (matamata.length) {
@@ -1835,6 +1851,7 @@ window.editarCompeticao = function(id) {
       dados.pontosVitoria = Number(fd.get('pontosVitoria')) || 3;
       dados.pontosEmpate = Number(fd.get('pontosEmpate')) || 1;
     }
+
     if (!dados.nome) return;
     try {
       if (c) await api('PUT', '/competicoes/' + c.id, dados);
@@ -2196,6 +2213,7 @@ window.abrirChaves = function(id) {
     </div>
     <div id="blocoGrupos"></div>
     <div id="blocoMataMata"></div>
+    <div id="blocoTerceiroManual"></div>
     <div id="podio" style="background:var(--bg-3);border-radius:12px;padding:14px;margin-top:18px;font-size:13.5px"></div>
     <div class="modal-actions">
       <button type="button" class="btn" onclick="closeModal()">Fechar</button>
@@ -2204,6 +2222,7 @@ window.abrirChaves = function(id) {
 
   const blocoGrupos = body.querySelector('#blocoGrupos');
   const blocoMataMata = body.querySelector('#blocoMataMata');
+  const blocoTerceiroManual = body.querySelector('#blocoTerceiroManual');
   const podioEl = body.querySelector('#podio');
   const acoesEl = body.querySelector('#acoesChaves');
 
@@ -2699,9 +2718,11 @@ function renderPersonalizado() {
       html += `<div class="fase-tag">🥉 3º Lugar</div>`;
       html += renderMatch(terceiro);
     }
-    const rFinal = rodadas[rodadas.length - 1];
+        const rFinal = rodadas[rodadas.length - 1];
     html += `<div class="fase-tag">${esc(nomeRodada(rFinal))}</div>`;
     porRodada[rFinal].sort((a, b) => a.posicao - b.posicao).forEach(m => html += renderMatch(m));
+
+    blocoMataMata.innerHTML = html;
 
     blocoMataMata.innerHTML = html;
 
@@ -2716,13 +2737,13 @@ function renderPersonalizado() {
         try {
           await api('PUT', '/competicoes/' + id + '/partidas/' + pid + '/vencedor', { vencedor: novo });
           await carregarDados();
-          // Só redesenha o bloco do mata-mata e o pódio
           renderMataMata();
           renderPodio();
         } catch (e) { toast(e.message, true); }
       };
     });
   }
+
 
   /* ====== PÓDIO ====== */
   function renderPodio() {
@@ -2739,7 +2760,76 @@ function renderPersonalizado() {
     <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#bf360c;font-weight:700">🥉 3º lugar (${c3.pontos3} pts)</span><span>${esc(podio.terceiro)}</span></div>
   `;
 }
+  /* ====== 3º LUGAR MANUAL (aparece em TODOS os tipos) ====== */
+  function renderTerceiroManual() {
+    const c2 = state.competicoes.find(x => x.id === id);
+    if (!c2) return;
 
+    const cfg = c2.config || {};
+    const terceiroAtual = cfg.terceiroColocado || '';
+
+    blocoTerceiroManual.innerHTML = `
+      <div class="sec-title" style="margin-top:24px">🥉 3º lugar (manual)</div>
+      <div class="card" style="padding:14px;margin-top:0">
+        <label class="toggle" style="margin-top:0">
+          <input type="checkbox" id="chkTerceiroChaves" ${terceiroAtual ? 'checked' : ''} />
+          <div>
+            Atribuir 3º lugar manualmente
+            <small>Use quando NÃO houver disputa de 3º lugar</small>
+          </div>
+        </label>
+        <div id="wrapTerceiroChaves" style="display:${terceiroAtual ? 'block' : 'none'};margin-top:12px">
+          <label>Equipe que fica em 3º
+            <select id="selTerceiroChaves">
+              <option value="">— Nenhuma —</option>
+              ${state.equipes.map(e => `
+                <option value="${e.id}" ${terceiroAtual === e.id ? 'selected' : ''}>
+                  ${esc(e.nome)}
+                </option>
+              `).join('')}
+            </select>
+          </label>
+        </div>
+      </div>
+    `;
+
+    const chk3 = blocoTerceiroManual.querySelector('#chkTerceiroChaves');
+    const wrap3 = blocoTerceiroManual.querySelector('#wrapTerceiroChaves');
+    const sel3 = blocoTerceiroManual.querySelector('#selTerceiroChaves');
+
+    async function salvarTerceiro(equipeId) {
+      const cFull = state.competicoes.find(x => x.id === id);
+      if (!cFull) return;
+      try {
+        await api('PUT', '/competicoes/' + id, {
+          nome: cFull.nome,
+          pontos1: cFull.pontos1,
+          pontos2: cFull.pontos2,
+          pontos3: cFull.pontos3,
+          secreto: cFull.secreto,
+          terceiroColocado: equipeId
+        });
+        await carregarDados();
+        renderPodio();
+      } catch (e) { toast(e.message, true); }
+    }
+
+    if (chk3) {
+      chk3.addEventListener('change', async () => {
+        wrap3.style.display = chk3.checked ? 'block' : 'none';
+        if (!chk3.checked) {
+          await salvarTerceiro('');   // desmarcar = limpar
+        } else if (sel3.value) {
+          await salvarTerceiro(sel3.value);
+        }
+      });
+    }
+    if (sel3) {
+      sel3.addEventListener('change', () => {
+        if (chk3.checked) salvarTerceiro(sel3.value);
+      });
+    }
+  }
   /* ====== RENDER PRINCIPAL ====== */
   function render() {
   const c2 = state.competicoes.find(x => x.id === id);
@@ -2764,6 +2854,7 @@ function renderPersonalizado() {
 
   renderAcoes();
   render();
+  renderTerceiroManual();
   renderPodio();
 };
 

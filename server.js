@@ -336,10 +336,18 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
     if (v) v.pontos += Number(c.pontos_1) || 0;
     if (p2) p2.pontos += Number(c.pontos_2) || 0;
   }
-  if (terc && terc.vencedor) {
-    const t3 = mapa.get(terc.vencedor);
-    if (t3) t3.pontos += Number(c.pontos_3) || 0;
-  }
+  // NOVO — prioriza o 3º manual
+    let terceiroId = '';
+    try {
+      const cfgC = JSON.parse(c.config_json || '{}');
+      terceiroId = cfgC.terceiroColocado || '';
+    } catch {}
+    if (!terceiroId && terc && terc.vencedor) terceiroId = terc.vencedor;
+
+    if (terceiroId) {
+      const t3 = mapa.get(terceiroId);
+      if (t3) t3.pontos += Number(c.pontos_3) || 0;
+    }
   });
 
   // 6. Subtrai as penalidades
@@ -1454,7 +1462,9 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
 app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
   const {
     nome, pontos1, pontos2, pontos3, secreto,
-    numGrupos, classificadosPorGrupo, pontosVitoria, pontosEmpate
+    numGrupos, classificadosPorGrupo, pontosVitoria, pontosEmpate,
+    terceiroColocado,
+    equipes                         // ← NOVO
   } = req.body || {};
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
 
@@ -1462,17 +1472,29 @@ app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
   if (!atual) return res.status(404).json({ erro: 'Competição não encontrada' });
   if (!exigirOrgPropria(req, atual.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
 
-  // Atualiza config_json sem perder o que já existia
-  const cfgAtual = JSON.parse(atual.config_json || '{}');
-  if (atual.tipo === 'grupos_mata_mata') {
-    if (numGrupos !== undefined)               cfgAtual.numGrupos = Math.max(2, Math.min(8, Number(numGrupos) || 2));
-    if (classificadosPorGrupo !== undefined)   cfgAtual.classificadosPorGrupo = Math.max(1, Math.min(4, Number(classificadosPorGrupo) || 2));
-    if (pontosVitoria !== undefined)           cfgAtual.pontosVitoria = Number(pontosVitoria) || 3;
-    if (pontosEmpate !== undefined)            cfgAtual.pontosEmpate  = Number(pontosEmpate)  || 1;
+  // ---------- Atualiza as equipes inscritas ----------
+  let equipesFinal = atual.equipes_json || '[]';
+  if (Array.isArray(equipes)) {
+    if (equipes.length < 2) {
+      return res.status(400).json({ erro: 'Selecione ao menos 2 equipes' });
+    }
+    equipesFinal = JSON.stringify(equipes);
   }
 
-    db.prepare(`UPDATE competicoes
-              SET nome=?, pontos_1=?, pontos_2=?, pontos_3=?, secreto=?, config_json=?
+  // ---------- Atualiza config_json ----------
+  const cfgAtual = JSON.parse(atual.config_json || '{}');
+  if (atual.tipo === 'grupos_mata_mata') {
+    if (numGrupos !== undefined)             cfgAtual.numGrupos = Math.max(2, Math.min(8, Number(numGrupos) || 2));
+    if (classificadosPorGrupo !== undefined) cfgAtual.classificadosPorGrupo = Math.max(1, Math.min(4, Number(classificadosPorGrupo) || 2));
+    if (pontosVitoria !== undefined)         cfgAtual.pontosVitoria = Number(pontosVitoria) || 3;
+    if (pontosEmpate !== undefined)          cfgAtual.pontosEmpate  = Number(pontosEmpate)  || 1;
+  }
+  if (terceiroColocado !== undefined) {
+    cfgAtual.terceiroColocado = String(terceiroColocado || '');
+  }
+
+  db.prepare(`UPDATE competicoes
+              SET nome=?, pontos_1=?, pontos_2=?, pontos_3=?, secreto=?, config_json=?, equipes_json=?
               WHERE id=?`)
     .run(
       nome.trim(),
@@ -1481,6 +1503,7 @@ app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
       Number(pontos3) || 0,
       secreto ? 1 : 0,
       JSON.stringify(cfgAtual),
+      equipesFinal,                     // ← NOVO
       req.params.id
     );
 
@@ -1488,9 +1511,8 @@ app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
   const salvas = db.prepare(
     'SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao'
   ).all(req.params.id).map(mapPartida);
-
   res.json(mapCompeticao(row, salvas));
-}); 
+});
 
 /**
  * POST /api/competicoes/:id/gerar-chave
@@ -2042,6 +2064,13 @@ app.get('/api/classificacao', auth, (req, res) => {
         if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
       }
     }
+        // 3º manual tem prioridade sobre o bloco
+    const cfgLocal = (() => { try { return JSON.parse(c.config_json || '{}'); } catch { return {}; } })();
+    if (cfgLocal.terceiroColocado) {
+      const t3 = mapa.get(cfgLocal.terceiroColocado);
+      if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
+    }
+
     return; // não usa a lógica antiga
   }
 
@@ -2057,7 +2086,12 @@ app.get('/api/classificacao', auth, (req, res) => {
     if (v) { v.pontos += Number(c.pontos_1) || 0; v.jogos++; }
     if (p2) { p2.pontos += Number(c.pontos_2) || 0; p2.jogos++; }
   }
-  if (terc && terc.vencedor) {
+  // NOVO — 3º definido manualmente no config
+  const cfgComp = (() => { try { return JSON.parse(c.config_json || '{}'); } catch { return {}; } })();
+  if (cfgComp.terceiroColocado) {
+    const t3 = mapa.get(cfgComp.terceiroColocado);
+    if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
+  } else if (terc && terc.vencedor) {
     const t3 = mapa.get(terc.vencedor);
     if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
   }
