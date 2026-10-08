@@ -806,7 +806,6 @@ function renderHome(el) {
         <span>🏅 Classificação</span>
         ${state.classificacao.length ? `
           <span style="display:flex;gap:6px">
-            <button class="btn btn-ghost btn-sm" onclick="exportarCSV()" title="Exportar CSV">📄 CSV</button>
             <button class="btn btn-ghost btn-sm" onclick="exportarPDF()" title="Exportar PDF">🖨️ PDF</button>
           </span>
         ` : ''}
@@ -819,9 +818,20 @@ function renderHome(el) {
               <div class="rank-info">
                 <div class="rank-nome">${esc(c.equipe.nome)}</div>
                 <div class="rank-meta">
-                  ${c.jogos} jogo${c.jogos === 1 ? '' : 's'}
+                  ${c.pontos + (c.pontosSubEquipes || 0)} pts
                   ${c.penal ? ` · −${c.penal} pts` : ''}
                 </div>
+                ${c.subEquipes && c.subEquipes.length ? `
+                  <div style="margin-top:6px;padding-left:8px;border-left:2px solid var(--borda);
+                              display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--txt-3)">
+                    ${c.subEquipes.map(s => `
+                      <div style="display:flex;justify-content:space-between;gap:6px">
+                        <span>↳ ${esc(s.equipe.nome)}</span>
+                        <span>${s.pontos - s.penal} pts</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
               </div>
               <div class="rank-pts">${c.total}</div>
             </div>
@@ -834,22 +844,44 @@ function renderHome(el) {
 
 /* ---------- EQUIPES ---------- */
 function renderEquipes(el) {
-  el.innerHTML = `
-    <div class="sec-title">👥 Equipes <span class="badge">${state.equipes.length}</span></div>
-    ${state.equipes.length ? state.equipes.map(e => `
-      <div class="card">
-        <div class="card-head">
-          <div style="flex:1;min-width:0">
-            <h3 class="card-title">${esc(e.nome)}</h3>
-            <div class="card-sub">${esc(e.responsavel || 'Sem responsável')}</div>
-          </div>
-        </div>
-        <div class="card-actions">
-          <button class="btn btn-ghost btn-sm" onclick="editarEquipe('${e.id}')">Editar</button>
-          ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirEquipe('${e.id}')">Excluir</button>` : ''}
+  // Agrupa
+  const roots = state.equipes.filter(e => !e.equipePaiId);
+  const filhosDe = id => state.equipes.filter(e => e.equipePaiId === id);
+
+  const cardEquipe = (e, isSub = false) => `
+    <div class="card" style="${isSub ? 'margin-left:16px;border-left:3px solid var(--prim)' : ''}">
+      <div class="card-head">
+        <div style="flex:1;min-width:0">
+          <h3 class="card-title">
+            ${isSub ? '<span style="color:var(--prim);margin-right:4px">↳</span>' : ''}
+            ${esc(e.nome)}
+          </h3>
+          <div class="card-sub">${esc(e.responsavel || 'Sem responsável')}</div>
         </div>
       </div>
-    `).join('') : '<div class="empty"><div class="empty-icon">👥</div><p>Nenhuma equipe cadastrada</p></div>'}
+      <div class="card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editarEquipe('${e.id}')">Editar</button>
+        ${!isSub ? `
+          <button class="btn btn-ghost btn-sm" onclick="editarEquipe(null, '${e.id}')">
+            + Sub-equipe
+          </button>
+        ` : ''}
+        ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirEquipe('${e.id}')">Excluir</button>` : ''}
+      </div>
+    </div>
+  `;
+
+  const blocosHTML = roots.map(root => {
+    const subs = filhosDe(root.id);
+    return `
+      ${cardEquipe(root, false)}
+      ${subs.map(s => cardEquipe(s, true)).join('')}
+    `;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="sec-title">👥 Equipes <span class="badge">${state.equipes.length}</span></div>
+    ${state.equipes.length ? blocosHTML : '<div class="empty"><div class="empty-icon">👥</div><p>Nenhuma equipe cadastrada</p></div>'}
   `;
 
   const fab = document.createElement('button');
@@ -858,56 +890,95 @@ function renderEquipes(el) {
   fab.onclick = () => editarEquipe(null);
   el.appendChild(fab);
 }
+/* ============================================================
+   CÁLCULO DO PÓDIO DE UM JOGO (por posição)
+   ------------------------------------------------------------
+   Ordena as posições por pontos (desc), vê qual equipe está
+   em cada uma e devolve os nomes das 3 melhores.
+   ============================================================ */
+function calcularPodioJogo(j) {
+  const posicoes = (j.posicoes || [])
+    .slice()
+    .sort((a, b) => (Number(b.pontos) || 0) - (Number(a.pontos) || 0));
 
+  const resultados = j.resultados || {};
+  // Inverte: posicaoId -> equipeId
+  const equipePorPosicao = {};
+  Object.entries(resultados).forEach(([equipeId, posicaoId]) => {
+    if (posicaoId) equipePorPosicao[posicaoId] = equipeId;
+  });
+
+  const nome = eid => {
+    const eq = state.equipes.find(e => e.id === eid);
+    return eq ? eq.nome : '—';
+  };
+
+  const acharNome = idx => {
+    const p = posicoes[idx];
+    if (!p) return '—';
+    const eid = equipePorPosicao[p.id];
+    return eid ? nome(eid) : '—';
+  };
+
+  return {
+    primeiro: acharNome(0),
+    segundo:  acharNome(1),
+    terceiro: acharNome(2)
+  };
+}
 /* ---------- JOGOS ---------- */
 /* ---------- JOGOS ---------- */
 function renderJogos(el) {
-  if (!state.jogosExpandidos) state.jogosExpandidos = new Set();
-
   // Cópia ordenada alfabeticamente (não muta o state)
   const jogos = [...state.jogos].sort((a, b) =>
     a.nome.localeCompare(b.nome, 'pt-BR')
   );
 
+  // Helper: uma "pílula" de pódio, com cor por posição
+  const pillPodio = (emoji, nome, bg, cor) => `
+    <span style="display:inline-flex;align-items:center;gap:6px;
+                 background:${bg};color:${cor};
+                 font-weight:700;font-size:12.5px;
+                 padding:5px 12px;border-radius:999px;
+                 white-space:nowrap;max-width:100%">
+      <span style="font-size:13px;line-height:1">${emoji}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
+    </span>`;
+
   el.innerHTML = `
     <div class="sec-title">🎮 Jogos <span class="badge">${jogos.length}</span></div>
     ${jogos.length ? jogos.map(j => {
       const posicoes = j.posicoes || [];
-      const resultados = j.resultados || {};
-      const expandido = state.jogosExpandidos.has(j.id);
+      const podio = calcularPodioJogo(j);
+      const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
+      const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
 
-      const preenchidas = posicoes
-        .map(p => {
-          const equipeId = Object.keys(resultados).find(eid => resultados[eid] === p.id);
-          const eq = equipeId ? state.equipes.find(e => e.id === equipeId) : null;
-          return eq ? { posicao: p, equipe: eq } : null;
-        })
-        .filter(Boolean);
+      // Sub-linha com as posições e pontos (igual antes)
+      const linhaPosicoes = posicoes.length
+        ? posicoes.map(p => `${esc(p.nome)}=${p.pontos}`).join(' · ')
+        : 'Sem posições';
 
       return `
         <div class="card">
-          <div class="card-head" style="cursor:pointer;margin-bottom:0" onclick="toggleJogo('${j.id}')">
+          <div class="card-head" style="margin-bottom:0">
             <div style="flex:1;min-width:0">
               <h3 class="card-title">
                 ${esc(j.nome)}
                 ${j.secreto ? '<span class="tag tag-secreto" style="margin-left:6px">🔒 Secreto</span>' : ''}
+                ${finalizada ? '<span class="tag tag-ok" style="margin-left:6px">Finalizado</span>' : ''}
               </h3>
-              <div class="card-sub">
-                ${posicoes.map(p => p.nome + '=' + p.pontos).join(' · ') || 'Sem posições'}
-              </div>
-              ${j.editado_por ? `<div class="card-sub" style="margin-top:4px;font-style:italic">Última edição por ${esc(j.editado_por)}</div>` : ''}
+              <div class="card-sub">${(j.participantes || []).length} equipes · ${posicoes.length} posições</div>
+              <div class="card-sub" style="margin-top:4px">${linhaPosicoes}</div>
+              ${j.editado_por ? `<div class="card-sub" style="margin-top:6px;font-style:italic">Última edição por ${esc(j.editado_por)}</div>` : ''}
             </div>
-            <span style="font-size:22px;color:var(--txt-3);line-height:1;transition:transform .2s;flex-shrink:0;${expandido ? 'transform:rotate(90deg)' : ''}">›</span>
           </div>
 
-          ${expandido ? `
-            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--borda);display:flex;flex-direction:column;gap:6px">
-              ${preenchidas.length ? preenchidas.map(({ posicao, equipe }) => `
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:13.5px">
-                  <span style="color:var(--txt-3);font-weight:600">${esc(posicao.nome)}</span>
-                  <span style="font-weight:700">${esc(equipe.nome)}</span>
-                </div>
-              `).join('') : '<p style="color:var(--txt-3);font-size:13px;margin:0">Sem resultados lançados.</p>'}
+          ${temResultado ? `
+            <div style="margin-top:14px;padding:10px 12px;background:var(--bg-3);border-radius:10px;
+                        display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              ${podio.primeiro !== '—' ? pillPodio('🥇', podio.primeiro, '#fef3c7', '#92400e') : ''}
+              ${podio.segundo  !== '—' ? pillPodio('🥈', podio.segundo,  '#e2e8f0', '#475569') : ''}
+              ${podio.terceiro !== '—' ? pillPodio('🥉', podio.terceiro, '#fed7aa', '#9a3412') : ''}
             </div>
           ` : ''}
 
@@ -928,7 +999,7 @@ function renderJogos(el) {
   el.appendChild(fab);
 }
 
-/* ---------- COMPETIÇÕES (Mata-Mata) ---------- */
+
 /* ---------- COMPETIÇÕES (Mata-Mata) ---------- */
 function renderCompeticoes(el) {
   if (!state.competicoesExpandidas) state.competicoesExpandidas = new Set();
@@ -1295,22 +1366,53 @@ window.exportarPDF = function() {
 /* ============================================================
    CRUD — EQUIPES
    ============================================================ */
-window.editarEquipe = function(id) {
+window.editarEquipe = function(id, equipePaiId = '') {
   const eq = id ? state.equipes.find(e => e.id === id) : null;
-  const body = openModal(eq ? 'Editar equipe' : 'Nova equipe', `
+
+  // Se estamos criando sub-equipe, ou editando uma que já é sub
+  const parentId = equipePaiId || eq?.equipePaiId || '';
+  const parent = parentId ? state.equipes.find(e => e.id === parentId) : null;
+
+  // Se editando uma equipe com filhos, não deixa mudar hierarquia
+  const temFilhos = eq && state.equipes.some(e => e.equipePaiId === eq.id);
+
+  const body = openModal(
+    eq ? 'Editar equipe' : (parent ? 'Nova sub-equipe' : 'Nova equipe'),
+    `
     <form id="fEq">
+      ${parent ? `
+        <div style="padding:10px 12px;background:var(--prim-cla);color:var(--prim-esc);
+                    border-radius:10px;font-size:13px;font-weight:600;margin-bottom:10px">
+          Sub-equipe de: ${esc(parent.nome)}
+        </div>
+      ` : ''}
+
       <label>Nome da equipe *
-        <input name="nome" required maxlength="60" value="${esc(eq?.nome || '')}" placeholder="Ex: Time Azul" autofocus />
+        <input name="nome" required maxlength="60" value="${esc(eq?.nome || '')}"
+               placeholder="${parent ? 'Ex: 120A' : 'Ex: Turma 120'}" autofocus />
       </label>
+
       <label>Responsável
-        <input name="responsavel" maxlength="60" value="${esc(eq?.responsavel || '')}" placeholder="Ex: João Silva" />
+        <input name="responsavel" maxlength="60" value="${esc(eq?.responsavel || '')}"
+               placeholder="Ex: João Silva" />
       </label>
+
+      ${eq && !temFilhos && !eq.equipePaiId ? `
+        <div style="margin-top:14px;padding:12px;background:var(--bg-3);
+                    border:1px solid var(--borda);border-radius:10px;font-size:12.5px;
+                    color:var(--txt-3)">
+          💡 Use o botão <strong>+ Sub-equipe</strong> na lista pra criar
+          variações desta equipe.
+        </div>
+      ` : ''}
+
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
         <button type="submit" class="btn">Salvar</button>
       </div>
     </form>
   `);
+
   body.querySelector('#fEq').onsubmit = async ev => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
@@ -1319,12 +1421,19 @@ window.editarEquipe = function(id) {
       responsavel: String(fd.get('responsavel')).trim()
     };
     if (!dados.nome) return;
+
+    // Se é criação e tem parent
+    if (!eq && parentId) {
+      dados.equipePaiId = parentId;
+    }
+
     try {
       if (eq) await api('PUT', '/equipes/' + eq.id, dados);
       else await api('POST', '/equipes', dados);
       closeModal();
-      await carregarDados(); render();
-      toast('Equipe salva!');
+      await carregarDados();
+      render();
+      toast(eq ? 'Equipe salva!' : (parent ? 'Sub-equipe criada!' : 'Equipe criada!'));
     } catch (e) { toast(e.message, true); }
   };
 };

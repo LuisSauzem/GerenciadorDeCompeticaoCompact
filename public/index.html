@@ -308,6 +308,98 @@
     z-index:200;transition:transform .25s;max-width:90%;text-align:center;
   }
   .toast.show{transform:translateX(-50%) translateY(0)}
+
+ /* ============================================================
+   AJUSTES MOBILE — classificação, jogos e mata-mata
+   ------------------------------------------------------------
+   Corrige o estouro horizontal dos cards em telas pequenas.
+   IMPORTANTE: nada aqui redefine a largura do .wrap —
+   o desktop mantém o max-width:720px original.
+   ============================================================ */
+
+/* Trava geral: nada pode criar scroll lateral */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* Cards nunca estouram o container */
+.pos-list, .pos-card, .jogo-card {
+  max-width: 100%;
+}
+.pos-card {
+  overflow: hidden;
+  min-width: 0;
+}
+.pos-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Ajustes finos só em telas pequenas */
+@media (max-width: 480px) {
+  .wrap {
+    padding: 16px 12px 32px;
+  }
+
+  .pos-card {
+    padding: 12px;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .pos-num {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+    border-radius: 9px;
+    margin-top: 2px;
+  }
+  .pos-nome {
+    font-size: 14.5px;
+  }
+  .pos-meta {
+    font-size: 11px;
+  }
+  .pos-pts {
+    font-size: 17px;
+    padding-left: 6px;
+  }
+
+  .pos-info > div[style*="border-left"] {
+    font-size: 11px !important;
+  }
+  .pos-info > div[style*="border-left"] > div {
+    flex-wrap: wrap;
+    gap: 2px 6px !important;
+  }
+
+  .org-hdr {
+    padding: 16px;
+    gap: 12px;
+  }
+  .org-hdr-emoji {
+    width: 52px;
+    height: 52px;
+    font-size: 26px;
+  }
+  .org-hdr-info h2 {
+    font-size: 19px;
+  }
+  .org-hdr-info p {
+    font-size: 12px;
+  }
+
+  .sec-title {
+    font-size: 12px;
+    margin: 20px 0 10px;
+  }
+
+  .chip, .jogo-posicoes .chip {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -484,7 +576,50 @@ async function renderHome() {
     toast(e.message);
   }
 }
+/* ============================================================
+   PÓDIO DE UM JOGO (por posição)
+   ============================================================ */
+function calcularPodioJogoPublico(j) {
+  const posicoes = (j.posicoes || [])
+    .slice()
+    .sort((a, b) => (Number(b.pontos) || 0) - (Number(a.pontos) || 0));
 
+  const resultados = j.resultados || {};
+  const equipePorPosicao = {};
+  Object.entries(resultados).forEach(([equipeId, posicaoId]) => {
+    if (posicaoId) equipePorPosicao[posicaoId] = equipeId;
+  });
+
+  const nome = eid => {
+    const eq = (window._equipesCache || []).find(e => e.id === eid);
+    return eq ? eq.nome : '—';
+  };
+
+  const acharNome = idx => {
+    const p = posicoes[idx];
+    if (!p) return '—';
+    const eid = equipePorPosicao[p.id];
+    return eid ? nome(eid) : '—';
+  };
+
+  return {
+    primeiro: acharNome(0),
+    segundo:  acharNome(1),
+    terceiro: acharNome(2)
+  };
+}
+
+/* Pílula de pódio reutilizável (mesma cor por posição) */
+function pillPodio(emoji, nome, bg, cor) {
+  return `<span style="display:inline-flex;align-items:center;gap:6px;
+                       background:${bg};color:${cor};
+                       font-weight:700;font-size:12.5px;
+                       padding:4px 11px;border-radius:999px;
+                       white-space:nowrap;max-width:100%">
+    <span style="font-size:13px;line-height:1">${emoji}</span>
+    <span style="overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
+  </span>`;
+}
 /* ============================================================
    TELA: ORG (página de uma organização)
    ------------------------------------------------------------
@@ -499,7 +634,7 @@ async function renderOrg(slug) {
 
   try {
     const data = await apiPublico('/orgs/' + encodeURIComponent(slug));
-    const { org, equipes, jogos, competicoes } = data;
+    const { org, equipes, classificacao, jogos, competicoes } = data;
     const torneios = competicoes || [];
 
     // Cache global — usado por várias funções internas
@@ -541,15 +676,29 @@ async function renderOrg(slug) {
       </div>
 
       <!-- ============ CLASSIFICAÇÃO ============ -->
-      ${equipes.length ? `
+    
+      ${classificacao.length ? `
         <div class="sec-title">🏅 Classificação</div>
         <div class="pos-list">
-          ${equipes.map((e, i) => `
+          ${classificacao.map((e, i) => `
             <div class="pos-card ${i === 0 && e.total > 0 ? 'destaque' : ''}">
               <div class="pos-num">${i + 1}º</div>
               <div class="pos-info">
-                <div class="pos-nome">${esc(e.nome)}</div>
+                <div class="pos-nome">${esc(e.equipe.nome)}</div>
                 ${e.penal > 0 ? `<div class="pos-meta">−${e.penal} pts de penalidade</div>` : ''}
+                ${e.subEquipes && e.subEquipes.length ? `
+                  <div style="margin-top:6px;padding-left:8px;
+                              border-left:2px solid ${i === 0 && e.total > 0 ? 'rgba(255,255,255,.4)' : 'var(--borda)'};
+                              display:flex;flex-direction:column;gap:3px;font-size:11.5px;
+                              color:${i === 0 && e.total > 0 ? 'rgba(255,255,255,.85)' : 'var(--txt-3)'}">
+                    ${e.subEquipes.map(s => `
+                      <div style="display:flex;justify-content:space-between;gap:8px">
+                        <span>↳ ${esc(s.equipe.nome)}</span>
+                        <span>${s.pontos - s.penal} pts</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
               </div>
               <div class="pos-pts">${e.total}</div>
             </div>
@@ -588,12 +737,58 @@ async function renderOrg(slug) {
         }).join('')}
       ` : ''}
 
+            <!-- ============ JOGOS ============ -->
+      ${jogos.length ? `
+        <div class="sec-title">🎮 Jogos</div>
+        ${jogos.map(j => {
+          const expandido = window._jogosExpandidos.has(j.id);
+          const podio = calcularPodioJogoPublico(j);
+          const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
+          const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
+
+          return `
+            <div class="jogo-card" data-jogo-id="${j.id}" style="padding:0;overflow:hidden">
+              <div class="jogo-toggle"
+                   onclick="toggleJogoPublico('${j.id}')"
+                   style="cursor:pointer;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0">
+                <div style="flex:1;min-width:0">
+                  <h3 class="jogo-nome" style="margin:0">
+                    ${esc(j.nome)}
+                    ${finalizada ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;margin-left:6px">Finalizado</span>' : ''}
+                  </h3>
+                  <div style="font-size:12px;color:var(--txt-3);margin-top:3px">
+                    ${(j.posicoes || []).map(p => `${esc(p.nome)}=${p.pontos}`).join(' · ') || 'Sem posições'}
+                  </div>
+                </div>
+                <span class="jogo-seta" style="font-size:22px;color:var(--txt-3);line-height:1;transition:transform .2s;flex-shrink:0;${expandido ? 'transform:rotate(90deg)' : ''}">›</span>
+              </div>
+
+              ${temResultado ? `
+                <div style="padding:0 16px 14px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  ${podio.primeiro !== '—' ? pillPodio('🥇', podio.primeiro, '#fef3c7', '#92400e') : ''}
+                  ${podio.segundo  !== '—' ? pillPodio('🥈', podio.segundo,  '#e2e8f0', '#475569') : ''}
+                  ${podio.terceiro !== '—' ? pillPodio('🥉', podio.terceiro, '#fed7aa', '#9a3412') : ''}
+                </div>
+              ` : ''}
+
+              ${expandido ? `
+                <div class="jogo-conteudo" style="padding:0 16px 16px 16px;border-top:1px solid var(--borda)">
+                  ${renderJogoCardInterno(j)}
+                </div>
+              ` : ''}
+            </div>`;
+        }).join('')}
+      ` : ''}
+
       <!-- ============ MATA-MATA / GRUPOS ============ -->
       ${torneios.length ? `
         <div class="sec-title">🏆 Mata-Mata</div>
         ${torneios.map(c => {
           const expandido = window._competicoesExpandidas.has(c.id);
-          const finalizada = calcularPodioPublico(c).primeiro !== '—';
+          const podio = calcularPodioPublico(c);
+          const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
+          const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
+
           return `
             <div class="jogo-card" data-comp-id="${c.id}" style="padding:0;overflow:hidden">
               <div class="jogo-toggle"
@@ -610,8 +805,17 @@ async function renderOrg(slug) {
                 </div>
                 <span class="jogo-seta" style="font-size:22px;color:var(--txt-3);line-height:1;transition:transform .2s;flex-shrink:0;${expandido ? 'transform:rotate(90deg)' : ''}">›</span>
               </div>
+
+              ${temResultado ? `
+                <div style="padding:0 16px 14px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  ${podio.primeiro !== '—' ? pillPodio('🥇', podio.primeiro, '#fef3c7', '#92400e') : ''}
+                  ${podio.segundo  !== '—' ? pillPodio('🥈', podio.segundo,  '#e2e8f0', '#475569') : ''}
+                  ${podio.terceiro !== '—' ? pillPodio('🥉', podio.terceiro, '#fed7aa', '#9a3412') : ''}
+                </div>
+              ` : ''}
+
               ${expandido ? `
-                <div class="jogo-conteudo" style="padding:0 16px 16px 16px">
+                <div class="jogo-conteudo" style="padding:0 16px 16px 16px;border-top:1px solid var(--borda)">
                   ${renderChavesPublico(c)}
                 </div>
               ` : ''}
@@ -808,10 +1012,11 @@ if (c.tipo === 'personalizado') {
   let html = '';
   blocos.forEach(b => {
     const partidas = (partidasPorBloco[b.id] || []).sort((a, bb) => a.posicao - bb.posicao);
-    html += `<div class="fase-tag" style="margin-top:16px">${b.tipo === 'grupo' ? '🌍' : '⚔️'} ${esc(b.nome)}</div>`;
+    const icone = b.tipo === 'grupo' ? '🌍' : (b.tipo === 'repescagem' ? '🔁' : '⚔️');
+      html += `<div class="fase-tag" style="margin-top:16px">${icone} ${esc(b.nome)}</div>`;
 
     // Se for grupo, calcula a tabela
-    if (b.tipo === 'grupo') {
+    if (b.tipo === 'grupo' || b.tipo === 'repescagem') {
       const cfg = Object.assign({ pontosVitoria: 3, pontosEmpate: 1 }, b.config || {});
       const idsSet = new Set();
       partidas.forEach(p => { if (p.equipeA) idsSet.add(p.equipeA); if (p.equipeB) idsSet.add(p.equipeB); });

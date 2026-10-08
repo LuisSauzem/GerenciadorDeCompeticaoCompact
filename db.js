@@ -207,6 +207,7 @@ addColuna('competicoes_partidas', 'bloco_id', "TEXT DEFAULT ''");
   addColuna('competicoes_partidas', 'grupo', "TEXT DEFAULT ''");
   addColuna('competicoes_partidas', 'gols_a', "INTEGER");
   addColuna('competicoes_partidas', 'gols_b', "INTEGER");
+  addColuna('equipes', 'equipe_pai_id', "TEXT DEFAULT ''");
 
   // ============================================================
   // SEED DO ADMIN GERAL

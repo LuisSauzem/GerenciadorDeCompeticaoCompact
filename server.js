@@ -24,6 +24,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('❌ Defina JWT_SECRET em produção');
+  process.exit(1);
+}
+
 // ------------------------------------------------------------
 // Middlewares globais
 // ------------------------------------------------------------
@@ -257,7 +262,8 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
   if (!org) return res.status(404).json({ erro: 'Organização não encontrada' });
 
   // 2. Busca os dados da org (apenas não-secretos)
-  const equipes = db.prepare('SELECT id, nome, responsavel FROM equipes WHERE org_id = ? ORDER BY nome').all(org.id);
+  const equipes = db.prepare(
+  'SELECT id, nome, responsavel, equipe_pai_id FROM equipes WHERE org_id = ? ORDER BY nome').all(org.id);
   const jogos = db.prepare('SELECT * FROM jogos WHERE org_id = ? AND secreto = 0 ORDER BY nome').all(org.id);
   const penalidades = db.prepare('SELECT equipe_id, pontos FROM penalidades WHERE org_id = ?').all(org.id);
   const competicoes = db.prepare('SELECT * FROM competicoes WHERE org_id = ? AND secreto = 0').all(org.id);
@@ -282,7 +288,7 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
 
   // 5. Soma pontos das competições (mata-mata e grupos)
   // 5. Soma pontos das competições
-competicoes.forEach(c => {
+  competicoes.forEach(c => {
   const partidas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY rodada, posicao').all(c.id);
 
   // -------- Personalizado --------
@@ -334,7 +340,7 @@ competicoes.forEach(c => {
     const t3 = mapa.get(terc.vencedor);
     if (t3) t3.pontos += Number(c.pontos_3) || 0;
   }
-});
+  });
 
   // 6. Subtrai as penalidades
   penalidades.forEach(p => {
@@ -342,16 +348,30 @@ competicoes.forEach(c => {
     if (item) item.penal += Number(p.pontos) || 0;
   });
 
-  // 7. Ordena: mais pontos primeiro, desempate por nome
-  const classificacao = Array.from(mapa.values())
-    .map(c => ({ ...c, total: c.pontos - c.penal }))
-    .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, 'pt-BR'));
+    // 7. Consolida classificação (raiz + sub-equipes)
+  const stats = new Map();
+  mapa.forEach((v, id) => {
+    stats.set(id, { pontos: v.pontos, penal: v.penal, jogos: 0 });
+  });
+  const classificacao = consolidarClassificacao(
+    equipes.map(e => ({
+      id: e.id,
+      nome: e.nome,
+      equipe_pai_id: e.equipe_pai_id || ''
+    })),
+    stats
+  );
 
   // 8. Monta a resposta final (jogos e competições em formato "amigável")
   const ptStmt = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao, id');
   res.json({
     org,
-    equipes: classificacao,
+        equipes: equipes.map(e => ({
+      id: e.id,
+      nome: e.nome,
+      equipePaiId: e.equipe_pai_id || ''
+    })),
+    classificacao: classificacao,
     jogos: jogos.map(j => ({
       id: j.id, nome: j.nome,
       posicoes: JSON.parse(j.posicoes_json || '[]'),
@@ -587,7 +607,16 @@ app.get('/api/equipes', auth, (req, res) => {
     ? (req.query.orgId || req.user.org_id)
     : req.user.org_id;
   if (!orgId) return res.json([]);
-  res.json(db.prepare('SELECT id, nome, responsavel FROM equipes WHERE org_id = ? ORDER BY nome').all(orgId));
+  const rows = db.prepare(`
+    SELECT id, nome, responsavel, equipe_pai_id
+    FROM equipes WHERE org_id = ? ORDER BY nome
+  `).all(orgId);
+  res.json(rows.map(e => ({
+    id: e.id,
+    nome: e.nome,
+    responsavel: e.responsavel,
+    equipePaiId: e.equipe_pai_id || ''
+  })));
 });
 
 app.post('/api/equipes', auth, bloquearAdminGeral, (req, res) => {
@@ -595,12 +624,27 @@ app.post('/api/equipes', auth, bloquearAdminGeral, (req, res) => {
     ? (req.body.orgId || req.user.org_id)
     : req.user.org_id;
   if (!orgId) return res.status(400).json({ erro: 'Organização não definida' });
-  const { nome, responsavel } = req.body || {};
+
+  const { nome, responsavel, equipePaiId } = req.body || {};
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
+
+  // Valida equipePaiId (só 1 nível de aninhamento)
+  let parentId = '';
+  if (equipePaiId) {
+    const parent = db.prepare('SELECT id, org_id, equipe_pai_id FROM equipes WHERE id = ?').get(equipePaiId);
+    if (!parent) return res.status(400).json({ erro: 'Equipe principal não encontrada' });
+    if (parent.org_id !== orgId) return res.status(400).json({ erro: 'Equipe principal de outra organização' });
+    if (parent.equipe_pai_id) return res.status(400).json({ erro: 'Não é permitido criar sub-sub-equipes' });
+    parentId = parent.id;
+  }
+
   const id = uid();
-  db.prepare('INSERT INTO equipes (id, org_id, nome, responsavel) VALUES (?, ?, ?, ?)')
-    .run(id, orgId, nome.trim(), responsavel || '');
-  res.status(201).json({ id, nome: nome.trim(), responsavel: responsavel || '' });
+  db.prepare('INSERT INTO equipes (id, org_id, nome, responsavel, equipe_pai_id) VALUES (?, ?, ?, ?, ?)')
+    .run(id, orgId, nome.trim(), responsavel || '', parentId);
+
+  res.status(201).json({
+    id, nome: nome.trim(), responsavel: responsavel || '', equipePaiId: parentId
+  });
 });
 
 app.put('/api/equipes/:id', auth, bloquearAdminGeral, (req, res) => {
@@ -611,13 +655,20 @@ app.put('/api/equipes/:id', auth, bloquearAdminGeral, (req, res) => {
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
   db.prepare('UPDATE equipes SET nome=?, responsavel=? WHERE id=?')
     .run(nome.trim(), responsavel || '', req.params.id);
-  res.json({ id: req.params.id, nome, responsavel });
+  res.json({ id: req.params.id, nome: nome.trim(), responsavel, equipePaiId: eq.equipe_pai_id || '' });
 });
 
 app.delete('/api/equipes/:id', auth, bloquearAdminGeral, exigirPapel('responsavel'), (req, res) => {
   const eq = db.prepare('SELECT * FROM equipes WHERE id = ?').get(req.params.id);
   if (!eq) return res.status(404).json({ erro: 'Equipe não encontrada' });
   if (!exigirOrgPropria(req, eq.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
+
+  // Bloqueia se tem sub-equipes
+  const nSubs = db.prepare('SELECT COUNT(*) AS n FROM equipes WHERE equipe_pai_id = ?').get(req.params.id).n;
+  if (nSubs > 0) {
+    return res.status(400).json({ erro: `Exclua as ${nSubs} sub-equipe(s) antes de remover esta equipe` });
+  }
+
   db.prepare('DELETE FROM equipes WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -816,7 +867,71 @@ function mapPartida(row) {
     golsB: (row.gols_b === null || row.gols_b === undefined) ? null : row.gols_b
   };
 }
+/* ============================================================
+   Consolidar classificação de equipes + sub-equipes.
+   - Cada equipe tem pontos/penal/jogos próprios
+   - Sub-equipes têm os dele
+   - O pai recebe a SOMA das sub-equipes
+   - Só os pais aparecem no ranking; sub-equipes vão como "detalhe"
+   ============================================================ */
+function consolidarClassificacao(equipes, mapaIdParaStats) {
+  // 1. Monta hierarquia
+  const hier = new Map();
+  equipes.forEach(e => hier.set(e.id, {
+    equipe: { id: e.id, nome: e.nome, equipePaiId: e.equipe_pai_id || '' },
+    pontos: 0, penal: 0, jogos: 0,
+    pontosSubEquipes: 0, penalSubEquipes: 0,
+    subEquipes: []
+  }));
 
+  // 2. Aplica stats de cada equipe
+  mapaIdParaStats.forEach((stats, id) => {
+    const h = hier.get(id);
+    if (!h) return;
+    h.pontos = stats.pontos;
+    h.penal = stats.penal;
+    h.jogos = stats.jogos;
+  });
+
+  // 3. Vincula sub-equipes aos pais
+  equipes.forEach(e => {
+    if (e.equipe_pai_id && hier.has(e.equipe_pai_id)) {
+      const pai = hier.get(e.equipe_pai_id);
+      const filho = hier.get(e.id);
+      pai.subEquipes.push(filho);
+    }
+  });
+
+  // 4. Soma pontos/penal das sub-equipes no pai
+  equipes.forEach(e => {
+    if (e.equipe_pai_id && hier.has(e.equipe_pai_id)) {
+      const pai = hier.get(e.equipe_pai_id);
+      const filho = hier.get(e.id);
+      pai.pontosSubEquipes += filho.pontos;
+      pai.penalSubEquipes += filho.penal;
+    }
+  });
+
+  // 5. Retorna só os pais, com detalhamento das sub-equipes
+  return Array.from(hier.values())
+    .filter(h => !h.equipe.equipePaiId)
+    .map(h => ({
+      equipe: h.equipe,
+      pontos: h.pontos,
+      pontosSubEquipes: h.pontosSubEquipes,
+      penal: h.penal + h.penalSubEquipes,
+      jogos: h.jogos,
+      total: h.pontos + h.pontosSubEquipes - h.penal - h.penalSubEquipes,
+      subEquipes: h.subEquipes.map(s => ({
+        equipe: s.equipe,
+        pontos: s.pontos,
+        penal: s.penal,
+        jogos: s.jogos,
+        total: s.pontos - s.penal
+      }))
+    }))
+    .sort((a, b) => b.total - a.total || a.equipe.nome.localeCompare(b.equipe.nome, 'pt-BR'));
+}
 /**
  * Converte uma linha de `competicoes` em objeto amigável.
  * Faz o parse do `config_json` (que guarda nº de grupos, pontos etc).
@@ -1337,21 +1452,45 @@ app.post('/api/competicoes', auth, bloquearAdminGeral, (req, res) => {
  * Não altera o tipo nem as equipes.
  */
 app.put('/api/competicoes/:id', auth, bloquearAdminGeral, (req, res) => {
-  const { nome, pontos1, pontos2, pontos3, secreto } = req.body || {};
+  const {
+    nome, pontos1, pontos2, pontos3, secreto,
+    numGrupos, classificadosPorGrupo, pontosVitoria, pontosEmpate
+  } = req.body || {};
   if (!nome || !nome.trim()) return res.status(400).json({ erro: 'Nome é obrigatório' });
 
   const atual = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
   if (!atual) return res.status(404).json({ erro: 'Competição não encontrada' });
   if (!exigirOrgPropria(req, atual.org_id)) return res.status(403).json({ erro: 'Sem permissão' });
 
-  db.prepare(`UPDATE competicoes SET nome=?, pontos_1=?, pontos_2=?, pontos_3=?, secreto=? WHERE id=?`)
-    .run(nome.trim(), Number(pontos1) || 0, Number(pontos2) || 0, Number(pontos3) || 0,
-         secreto ? 1 : 0, req.params.id);
+  // Atualiza config_json sem perder o que já existia
+  const cfgAtual = JSON.parse(atual.config_json || '{}');
+  if (atual.tipo === 'grupos_mata_mata') {
+    if (numGrupos !== undefined)               cfgAtual.numGrupos = Math.max(2, Math.min(8, Number(numGrupos) || 2));
+    if (classificadosPorGrupo !== undefined)   cfgAtual.classificadosPorGrupo = Math.max(1, Math.min(4, Number(classificadosPorGrupo) || 2));
+    if (pontosVitoria !== undefined)           cfgAtual.pontosVitoria = Number(pontosVitoria) || 3;
+    if (pontosEmpate !== undefined)            cfgAtual.pontosEmpate  = Number(pontosEmpate)  || 1;
+  }
+
+    db.prepare(`UPDATE competicoes
+              SET nome=?, pontos_1=?, pontos_2=?, pontos_3=?, secreto=?, config_json=?
+              WHERE id=?`)
+    .run(
+      nome.trim(),
+      Number(pontos1) || 0,
+      Number(pontos2) || 0,
+      Number(pontos3) || 0,
+      secreto ? 1 : 0,
+      JSON.stringify(cfgAtual),
+      req.params.id
+    );
 
   const row = db.prepare('SELECT * FROM competicoes WHERE id = ?').get(req.params.id);
-  const salvas = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao').all(req.params.id).map(mapPartida);
+  const salvas = db.prepare(
+    'SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao'
+  ).all(req.params.id).map(mapPartida);
+
   res.json(mapCompeticao(row, salvas));
-});
+}); 
 
 /**
  * POST /api/competicoes/:id/gerar-chave
@@ -1871,7 +2010,7 @@ app.get('/api/classificacao', auth, (req, res) => {
 
   // Soma pontos das competições (só partidas do mata-mata)
   // Soma pontos das competições
-competicoes.forEach(c => {
+  competicoes.forEach(c => {
   const pts = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ?').all(c.id).map(mapPartida);
 
   // -------- Personalizado: usa os blocos "eh_final" e "eh_terceiro" --------
@@ -1922,7 +2061,7 @@ competicoes.forEach(c => {
     const t3 = mapa.get(terc.vencedor);
     if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
   }
-});
+  });
 
   // Subtrai penalidades
   penalidades.forEach(p => {
@@ -1930,43 +2069,19 @@ competicoes.forEach(c => {
     if (item) item.penal += Number(p.pontos) || 0;
   });
 
-  const lista = Array.from(mapa.values())
-    .map(c => ({ equipe: c.equipe, pontos: c.pontos, penal: c.penal, jogos: c.jogos, total: c.pontos - c.penal }))
-    .sort((a, b) => b.total - a.total || a.equipe.nome.localeCompare(b.equipe.nome, 'pt-BR'));
-  res.json(lista);
+  // Reconstrói hierarquia consolidada
+  const equipesRaw = db.prepare('SELECT id, nome, equipe_pai_id FROM equipes WHERE org_id = ?').all(orgId);
+  const stats = new Map();
+  mapa.forEach((v, id) => {
+    stats.set(id, { pontos: v.pontos, penal: v.penal, jogos: v.jogos });
+  });
+
+  res.json(consolidarClassificacao(equipesRaw, stats));
 });
 // ============================================================
 // COMPETIÇÕES PERSONALIZADAS — blocos e partidas editáveis
 // ============================================================
 
-function classificarBloco(partidas, cfg) {
-  const ptsV = Number(cfg?.pontosVitoria) || 3;
-  const ptsE = Number(cfg?.pontosEmpate) || 1;
-  const idsSet = new Set();
-  partidas.forEach(p => {
-    if (p.equipe_a) idsSet.add(p.equipe_a);
-    if (p.equipe_b) idsSet.add(p.equipe_b);
-  });
-  const mapa = new Map();
-  Array.from(idsSet).forEach(eid =>
-    mapa.set(eid, { id: eid, P:0,V:0,E:0,D:0,GP:0,GC:0,SG:0,PTS:0 })
-  );
-  partidas.forEach(p => {
-    if (!p.equipe_a || !p.equipe_b) return;
-    if (p.gols_a === null || p.gols_b === null) return;
-    const a = mapa.get(p.equipe_a), b = mapa.get(p.equipe_b);
-    if (!a || !b) return;
-    a.P++; b.P++;
-    a.GP += p.gols_a; a.GC += p.gols_b;
-    b.GP += p.gols_b; b.GC += p.gols_a;
-    if (p.gols_a > p.gols_b) { a.V++; a.PTS += ptsV; b.D++; }
-    else if (p.gols_a < p.gols_b) { b.V++; b.PTS += ptsV; a.D++; }
-    else { a.E++; b.E++; a.PTS += ptsE; b.PTS += ptsE; }
-  });
-  return Array.from(mapa.values())
-    .map(x => ({ ...x, SG: x.GP - x.GC }))
-    .sort((x, y) => y.PTS - x.PTS || y.SG - x.SG || y.GP - x.GP);
-}
 
 function mapBloco(row) {
   let cfg = {};
@@ -1981,39 +2096,6 @@ function mapBloco(row) {
     ehTerceiro: !!row.eh_terceiro,
     config: cfg
   };
-}
-/* Calcula a classificação de um bloco tipo grupo/repescagem */
-function classificarBloco(partidas, cfg) {
-  const pontosV = Number(cfg?.pontosVitoria) || 3;
-  const pontosE = Number(cfg?.pontosEmpate) || 1;
-
-  const idsSet = new Set();
-  partidas.forEach(p => {
-    if (p.equipe_a) idsSet.add(p.equipe_a);
-    if (p.equipe_b) idsSet.add(p.equipe_b);
-  });
-
-  const mapa = new Map();
-  Array.from(idsSet).forEach(eid =>
-    mapa.set(eid, { id: eid, P:0, V:0, E:0, D:0, GP:0, GC:0, SG:0, PTS:0 })
-  );
-
-  partidas.forEach(p => {
-    if (!p.equipe_a || !p.equipe_b) return;
-    if (p.gols_a === null || p.gols_b === null) return;
-    const a = mapa.get(p.equipe_a), b = mapa.get(p.equipe_b);
-    if (!a || !b) return;
-    a.P++; b.P++;
-    a.GP += p.gols_a; a.GC += p.gols_b;
-    b.GP += p.gols_b; b.GC += p.gols_a;
-    if (p.gols_a > p.gols_b) { a.V++; a.PTS += pontosV; b.D++; }
-    else if (p.gols_a < p.gols_b) { b.V++; b.PTS += pontosV; a.D++; }
-    else { a.E++; b.E++; a.PTS += pontosE; b.PTS += pontosE; }
-  });
-
-  return Array.from(mapa.values())
-    .map(x => ({ ...x, SG: x.GP - x.GC }))
-    .sort((x, y) => y.PTS - x.PTS || y.SG - x.SG || y.GP - x.GP);
 }
 
 /* -------- Blocos: CRUD -------- */
