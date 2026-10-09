@@ -620,6 +620,30 @@ function pillPodio(emoji, nome, bg, cor) {
     <span style="overflow:hidden;text-overflow:ellipsis">${esc(nome)}</span>
   </span>`;
 }
+
+function expandirClassificacaoPublica(classificacao, mostrarSubs) {
+  if (!mostrarSubs) return classificacao;
+  const flat = [];
+  classificacao.forEach(c => {
+    const penalSubs = (c.subEquipes || []).reduce((acc, s) => acc + (s.penal || 0), 0);
+    const penalProprio = (c.penal || 0) - penalSubs;
+    flat.push({
+      equipe: c.equipe, pontos: c.pontos, penal: penalProprio,
+      total: c.pontos - penalProprio, subEquipes: [], _eSub: false
+    });
+    (c.subEquipes || []).forEach(s => {
+      flat.push({
+        equipe: s.equipe, pontos: s.pontos, penal: s.penal || 0,
+        total: s.total, subEquipes: [], _eSub: true
+      });
+    });
+  });
+  flat.sort((a, b) => b.total - a.total || a.equipe.nome.localeCompare(b.equipe.nome, 'pt-BR'));
+  return flat;
+}
+
+
+
 /* ============================================================
    TELA: ORG (página de uma organização)
    ------------------------------------------------------------
@@ -628,6 +652,7 @@ function pillPodio(emoji, nome, bg, cor) {
      - Jogos (cards colapsáveis)
      - Competições (mata-mata e grupos)
    ============================================================ */
+   
 async function renderOrg(slug) {
   const el = $('#app');
   el.innerHTML = `<div class="empty"><div class="spinner"></div>Carregando...</div>`;
@@ -635,6 +660,8 @@ async function renderOrg(slug) {
   try {
     const data = await apiPublico('/orgs/' + encodeURIComponent(slug));
     const { org, equipes, classificacao, jogos, competicoes } = data;
+    const mostrarSubs = !!org.mostrarSubs;
+    const classificacaoExibida = expandirClassificacaoPublica(classificacao, mostrarSubs);
     const torneios = competicoes || [];
 
     // Cache global — usado por várias funções internas
@@ -677,20 +704,25 @@ async function renderOrg(slug) {
 
       <!-- ============ CLASSIFICAÇÃO ============ -->
     
-      ${classificacao.length ? `
+      ${classificacaoExibida.length ? `
         <div class="sec-title">🏅 Classificação</div>
         <div class="pos-list">
-          ${classificacao.map((e, i) => `
+          ${classificacaoExibida.map((e, i) => `
             <div class="pos-card ${i === 0 && e.total > 0 ? 'destaque' : ''}">
               <div class="pos-num">${i + 1}º</div>
               <div class="pos-info">
                 <div class="pos-nome">${esc(e.equipe.nome)}</div>
                 ${e.penal > 0 ? `<div class="pos-meta">−${e.penal} pts de penalidade</div>` : ''}
-                ${e.subEquipes && e.subEquipes.length ? `
+                  ${!mostrarSubs && e.subEquipes && e.subEquipes.length ? `
                   <div style="margin-top:6px;padding-left:8px;
                               border-left:2px solid ${i === 0 && e.total > 0 ? 'rgba(255,255,255,.4)' : 'var(--borda)'};
                               display:flex;flex-direction:column;gap:3px;font-size:11.5px;
                               color:${i === 0 && e.total > 0 ? 'rgba(255,255,255,.85)' : 'var(--txt-3)'}">
+                    <div style="display:flex;justify-content:space-between;gap:8px;font-weight:700">
+                      ${e._eSub ? '<span style="color:var(--txt-3);margin-right:4px">↳</span>' : ''}
+                      <span>${esc(e.equipe.nome)} (próprios)</span>
+                      <span>${e.pontos} pts</span>
+                    </div>
                     ${e.subEquipes.map(s => `
                       <div style="display:flex;justify-content:space-between;gap:8px">
                         <span>↳ ${esc(s.equipe.nome)}</span>
@@ -713,7 +745,7 @@ async function renderOrg(slug) {
           const expandido = window._jogosExpandidos.has(j.id);
           const podio = calcularPodioJogoPublico(j);
           const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
-          const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
+          const finalizada = jogoFinalizadoPublico(j);
 
           return `
             <div class="jogo-card" data-jogo-id="${j.id}" style="padding:0;overflow:hidden">
@@ -1304,6 +1336,18 @@ window.toggleCompeticaoPublica = function(id) {
    ------------------------------------------------------------
    Decide qual tela renderizar com base na rota (hash).
    ============================================================ */
+
+function jogoFinalizadoPublico(j) {
+  const posicoes = j.posicoes || [];
+  if (!posicoes.length) return false;
+  const resultados = j.resultados || {};
+  const equipePorPosicao = {};
+  Object.entries(resultados).forEach(([equipeId, posicaoId]) => {
+    if (posicaoId) equipePorPosicao[posicaoId] = equipeId;
+  });
+  return posicoes.every(p => !!equipePorPosicao[p.id]);
+}
+
 async function render() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (rotaAtual.tela === 'org') {

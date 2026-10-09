@@ -168,8 +168,15 @@ app.post('/api/auth/login', (req, res) => {
   const token = jwt.sign({ id: u.id }, JWT_SECRET, { expiresIn: '7d' });
   res.json({
     token,
-    usuario: { id: u.id, usuario: u.usuario, nome: u.nome, papel: u.papel,
-               orgId: u.org_id, orgNome: u.org_nome, orgSlug: u.org_slug }
+    usuario: {
+      id: u.id, usuario: u.usuario, nome: u.nome, papel: u.papel,
+      orgId: u.org_id, orgNome: u.org_nome, orgSlug: u.org_slug,
+      orgMostrarSubs: (() => {
+        if (!u.org_id) return true;
+        const o = db.prepare('SELECT mostrar_subs_classificacao AS m FROM organizacoes WHERE id = ?').get(u.org_id);
+        return o ? !!o.m : true;
+      })()
+    }
   });
 });
 
@@ -182,9 +189,13 @@ app.post('/api/auth/login', (req, res) => {
  */
 app.get('/api/me', auth, (req, res) => {
   const org = req.user.org_id
-    ? db.prepare('SELECT id, nome, slug, cor, emoji FROM organizacoes WHERE id = ?').get(req.user.org_id)
+    ? db.prepare('SELECT id, nome, slug, cor, emoji, mostrar_subs_classificacao FROM organizacoes WHERE id = ?').get(req.user.org_id)
     : null;
-  res.json({ ...req.user, org });
+  res.json({
+    ...req.user,
+    orgMostrarSubs: org ? !!org.mostrar_subs_classificacao : true,
+    org
+  });
 });
 
 
@@ -215,6 +226,29 @@ app.put('/api/me/senha', auth, (req, res) => {
   const hash = bcrypt.hashSync(senhaNova, 10);
   db.prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?').run(hash, req.user.id);
   res.json({ ok: true });
+});
+
+/**
+ * PUT /api/minha-org/mostrar-subs
+ * ------------------------------------------------------------
+ * Alterna a flag "mostrar sub-equipes na classificação" da
+ * PRÓPRIA organização. Acessível a responsável e organizador.
+ * Admin_geral fica de fora (não tem org).
+ * Body: { mostrarSubs: true|false }
+ */
+app.put('/api/minha-org/mostrar-subs', auth, (req, res) => {
+  const orgId = req.user.org_id;
+  if (!orgId) return res.status(400).json({ erro: 'Usuário sem organização' });
+
+  const { mostrarSubs } = req.body || {};
+  if (mostrarSubs === undefined) {
+    return res.status(400).json({ erro: 'Informe mostrarSubs' });
+  }
+
+  db.prepare('UPDATE organizacoes SET mostrar_subs_classificacao = ? WHERE id = ?')
+    .run(mostrarSubs ? 1 : 0, orgId);
+
+  res.json({ ok: true, mostrarSubs: !!mostrarSubs });
 });
 
 
@@ -258,7 +292,7 @@ app.get('/api/publico/orgs', (req, res) => {
  */
 app.get('/api/publico/orgs/:slug', (req, res) => {
   // 1. Busca a organização pelo slug
-  const org = db.prepare('SELECT id, nome, slug, cor, emoji, imagem FROM organizacoes WHERE slug = ? AND ativo = 1').get(req.params.slug);
+    const org = db.prepare('SELECT id, nome, slug, cor, emoji, imagem, mostrar_subs_classificacao FROM organizacoes WHERE slug = ? AND ativo = 1').get(req.params.slug);
   if (!org) return res.status(404).json({ erro: 'Organização não encontrada' });
 
   // 2. Busca os dados da org (apenas não-secretos)
@@ -310,7 +344,12 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
         if (p2) p2.pontos += Number(c.pontos_2) || 0;
       }
     }
-    if (blocoTerceiro) {
+        // 3º manual tem prioridade sobre o bloco (só um dos dois conta).
+    const cfgLocalP = (() => { try { return JSON.parse(c.config_json || '{}'); } catch { return {}; } })();
+    if (cfgLocalP.terceiroColocado) {
+      const t3 = mapa.get(cfgLocalP.terceiroColocado);
+      if (t3) t3.pontos += Number(c.pontos_3) || 0;
+    } else if (blocoTerceiro) {
       const terceiros = partidas
         .filter(p => p.bloco_id === blocoTerceiro.id && p.vencedor)
         .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
@@ -373,8 +412,16 @@ app.get('/api/publico/orgs/:slug', (req, res) => {
   // 8. Monta a resposta final (jogos e competições em formato "amigável")
   const ptStmt = db.prepare('SELECT * FROM competicoes_partidas WHERE competicao_id = ? ORDER BY grupo, rodada, posicao, id');
   res.json({
-    org,
-        equipes: equipes.map(e => ({
+    org: {
+      id: org.id,
+      nome: org.nome,
+      slug: org.slug,
+      cor: org.cor,
+      emoji: org.emoji,
+      imagem: org.imagem,
+      mostrarSubs: !!org.mostrar_subs_classificacao
+    },
+      equipes: equipes.map(e => ({
       id: e.id,
       nome: e.nome,
       equipePaiId: e.equipe_pai_id || ''
@@ -2054,7 +2101,11 @@ app.get('/api/classificacao', auth, (req, res) => {
         if (p2) { p2.pontos += Number(c.pontos_2) || 0; p2.jogos++; }
       }
     }
-    if (blocoTerceiro) {
+    const cfgLocal = (() => { try { return JSON.parse(c.config_json || '{}'); } catch { return {}; } })();
+    if (cfgLocal.terceiroColocado) {
+      const t3 = mapa.get(cfgLocal.terceiroColocado);
+      if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
+    } else if (blocoTerceiro) {
       const terceiros = pts
         .filter(p => p.blocoId === blocoTerceiro.id && p.vencedor)
         .sort((a, b) => (b.posicao || 0) - (a.posicao || 0));
@@ -2063,12 +2114,6 @@ app.get('/api/classificacao', auth, (req, res) => {
         const t3 = mapa.get(terc.vencedor);
         if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
       }
-    }
-        // 3º manual tem prioridade sobre o bloco
-    const cfgLocal = (() => { try { return JSON.parse(c.config_json || '{}'); } catch { return {}; } })();
-    if (cfgLocal.terceiroColocado) {
-      const t3 = mapa.get(cfgLocal.terceiroColocado);
-      if (t3) { t3.pontos += Number(c.pontos_3) || 0; t3.jogos++; }
     }
 
     return; // não usa a lógica antiga

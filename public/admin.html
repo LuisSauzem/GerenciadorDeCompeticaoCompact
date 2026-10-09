@@ -810,38 +810,47 @@ function renderHome(el) {
           </span>
         ` : ''}
       </div>
-      ${state.classificacao.length ? `
+              ${state.classificacao.length ? `
         <div class="rank-list">
-          ${state.classificacao.slice(0, 5).map((c, i) => `
-            <div class="rank-item">
-              <div class="rank-num">${i + 1}º</div>
-              <div class="rank-info">
-                <div class="rank-nome">${esc(c.equipe.nome)}</div>
-                <div class="rank-meta">
-                  ${c.pontos + (c.pontosSubEquipes || 0)} pts
-                  ${c.penal ? ` · −${c.penal} pts` : ''}
-                </div>
-                ${c.subEquipes && c.subEquipes.length ? `
-                  <div style="margin-top:6px;padding-left:8px;border-left:2px solid var(--borda);
-                              display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--txt-3)">
-                    ${c.subEquipes.map(s => `
-                      <div style="display:flex;justify-content:space-between;gap:6px">
-                        <span>↳ ${esc(s.equipe.nome)}</span>
-                        <span>${s.pontos - s.penal} pts</span>
-                      </div>
-                    `).join('')}
+          ${state.classificacao.slice(0, 5).map((c, i) => {
+            const mostrar = !!state.usuario?.orgMostrarSubs;
+            const temSubs = c.subEquipes && c.subEquipes.length > 0;
+            return `
+              <div class="rank-item">
+                <div class="rank-num">${i + 1}º</div>
+                <div class="rank-info">
+                  <div class="rank-nome">${esc(c.equipe.nome)}</div>
+                  <div class="rank-meta">
+                    ${c.total} pts
+                    ${c.penal ? ` · −${c.penal} pts` : ''}
                   </div>
-                ` : ''}
+                    ${mostrar && temSubs ? `
+                    <div style="margin-top:6px;padding-left:8px;border-left:2px solid var(--borda);
+                                display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--txt-3)">
+                      <div style="display:flex;justify-content:space-between;gap:6px;font-weight:700">
+                        <span>${esc(c.equipe.nome)} (próprios)</span>
+                        <span>${c.pontos} pts</span>
+                      </div>
+                      ${c.subEquipes.map(s => `
+                        <div style="display:flex;justify-content:space-between;gap:6px">
+                          <span>↳ ${esc(s.equipe.nome)}</span>
+                          <span>${s.total} pts</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="rank-pts">${c.total}</div>
               </div>
-              <div class="rank-pts">${c.total}</div>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
-            ` : '<div class="empty"><div class="empty-icon">📊</div><p>Nenhuma pontuação ainda</p></div>'}
+      ` : '<div class="empty"><div class="empty-icon">📊</div><p>Nenhuma pontuação ainda</p></div>'}
     </div>
   `;
 }
 
+/* ---------- EQUIPES ---------- */
 /* ---------- EQUIPES ---------- */
 function renderEquipes(el) {
   // Agrupa
@@ -879,10 +888,49 @@ function renderEquipes(el) {
     `;
   }).join('');
 
+  const mostrar = !!state.usuario?.orgMostrarSubs;
+
   el.innerHTML = `
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <label class="toggle" style="margin-top:0">
+        <input type="checkbox" id="chkMostrarSubs" ${mostrar ? 'checked' : ''} />
+        <div>
+          Mostrar sub-equipes na classificação geral
+          <small>
+            ${mostrar
+              ? 'Cada sub-equipe aparece como linha própria'
+              : 'Só a equipe principal, com pontos somados das subs'}
+          </small>
+        </div>
+      </label>
+    </div>
+
     <div class="sec-title">👥 Equipes <span class="badge">${state.equipes.length}</span></div>
     ${state.equipes.length ? blocosHTML : '<div class="empty"><div class="empty-icon">👥</div><p>Nenhuma equipe cadastrada</p></div>'}
   `;
+
+  // Handler do toggle
+  const chk = el.querySelector('#chkMostrarSubs');
+  if (chk) {
+    chk.addEventListener('change', async () => {
+      const anterior = !!state.usuario.orgMostrarSubs;
+      chk.disabled = true;
+      try {
+        await api('PUT', '/minha-org/mostrar-subs', { mostrarSubs: chk.checked });
+        state.usuario.orgMostrarSubs = chk.checked;
+        localStorage.setItem('cj_user', JSON.stringify(state.usuario));
+        render();
+        toast(chk.checked
+          ? 'Sub-equipes visíveis na classificação'
+          : 'Somente equipes principais visíveis');
+      } catch (e) {
+        chk.checked = anterior;
+        toast(e.message, true);
+      } finally {
+        chk.disabled = false;
+      }
+    });
+  }
 
   const fab = document.createElement('button');
   fab.className = 'fab';
@@ -926,8 +974,21 @@ function calcularPodioJogo(j) {
     terceiro: acharNome(2)
   };
 }
+
 /* ---------- JOGOS ---------- */
-/* ---------- JOGOS ---------- */
+function jogoFinalizado(j) {
+  const posicoes = j.posicoes || [];
+  if (!posicoes.length) return false;
+  const resultados = j.resultados || {};
+  // Mapa inverso: posicaoId -> equipeId
+  const equipePorPosicao = {};
+  Object.entries(resultados).forEach(([equipeId, posicaoId]) => {
+    if (posicaoId) equipePorPosicao[posicaoId] = equipeId;
+  });
+  // Todas as posições precisam ter equipe
+  return posicoes.every(p => !!equipePorPosicao[p.id]);
+}
+
 function renderJogos(el) {
   // Cópia ordenada alfabeticamente (não muta o state)
   const jogos = [...state.jogos].sort((a, b) =>
@@ -951,7 +1012,7 @@ function renderJogos(el) {
       const posicoes = j.posicoes || [];
       const podio = calcularPodioJogo(j);
       const temResultado = podio.primeiro !== '—' || podio.segundo !== '—' || podio.terceiro !== '—';
-      const finalizada = podio.primeiro !== '—' && podio.segundo !== '—';
+      const finalizada = jogoFinalizado(j);
 
       // Sub-linha com as posições e pontos (igual antes)
       const linhaPosicoes = posicoes.length
@@ -3704,8 +3765,17 @@ window.abrirTrocarSenha = function() {
    ============================================================ */
 (async function init() {
   if (state.token && state.usuario) {
-    try { await iniciarApp(); }
-    catch { logout(); }
+    try {
+      const me = await api('GET', '/me');
+      state.usuario = {
+        ...state.usuario,
+        orgMostrarSubs: me.orgMostrarSubs,
+        orgNome: me.org?.nome || state.usuario.orgNome,
+        orgSlug: me.org?.slug || state.usuario.orgSlug
+      };
+      localStorage.setItem('cj_user', JSON.stringify(state.usuario));
+      await iniciarApp();
+    } catch { logout(); }
   } else {
     $('#telaLogin').style.display = 'grid';
   }

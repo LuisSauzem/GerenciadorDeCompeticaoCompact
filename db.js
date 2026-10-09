@@ -203,6 +203,7 @@ addColuna('competicoes_partidas', 'bloco_id', "TEXT DEFAULT ''");
 
   // Aplica as migrações conhecidas (seguro de rodar várias vezes)
   addColuna('organizacoes', 'imagem', "TEXT DEFAULT ''");
+  addColuna('organizacoes', 'mostrar_subs_classificacao', "INTEGER DEFAULT 1");
   addColuna('competicoes', 'config_json', "TEXT DEFAULT '{}'");
   addColuna('competicoes_partidas', 'grupo', "TEXT DEFAULT ''");
   addColuna('competicoes_partidas', 'gols_a', "INTEGER");
