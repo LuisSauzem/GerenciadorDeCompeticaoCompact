@@ -3284,22 +3284,31 @@
             </table>
           </div>`;
 
-            // --- Inputs de placar (AQUI é onde estava faltando) ---
+            // --- Inputs de placar ---
             const partidasHTML = partidas.map(p => {
               const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
               const nomeB = p.equipeB ? nomeEquipe(p.equipeB) : '—';
               const gA = (p.golsA === null || p.golsA === undefined) ? '' : p.golsA;
               const gB = (p.golsB === null || p.golsB === undefined) ? '' : p.golsB;
               return `
-            <div class="partida-grupo" style="display:grid;grid-template-columns:1fr 60px 20px 60px 1fr;gap:10px;align-items:center;margin-top:10px">
+          <div class="partida-grupo-wrap" style="margin-top:10px">
+            <div class="partida-grupo" style="display:grid;grid-template-columns:1fr 60px 20px 60px 1fr;gap:10px;align-items:center">
               <div style="text-align:right;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nomeA)}</div>
               <input type="number" min="0" value="${gA}" data-pid="${p.id}" data-lado="a" class="placar-input"
-                    style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
+                     style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
               <div style="text-align:center;font-weight:700;color:var(--txt-3);font-size:15px">×</div>
               <input type="number" min="0" value="${gB}" data-pid="${p.id}" data-lado="b" class="placar-input"
-                    style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
+                     style="text-align:center;padding:10px 6px;font-size:15px;font-weight:700;margin:0" />
               <div style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nomeB)}</div>
-            </div>`;
+            </div>
+            <div class="matchup-horario">
+              <span style="font-size:12.5px;color:var(--txt-3);white-space:nowrap">🕐 Inserir horário:</span>
+              <input type="time" class="horario-input" data-horario-pid="${p.id}"
+                     value="${esc(p.horario || '')}" />
+              <span class="horario-msg" data-horario-msg="${p.id}"
+                    style="font-size:11.5px;color:var(--txt-3)"></span>
+            </div>
+          </div>`;
             }).join('');
 
             html += `
@@ -3310,7 +3319,7 @@
           </div>`;
           }
 
-          /* ==================== BLOCO TIPO ELIMINATÓRIA ==================== */
+                    /* ==================== BLOCO TIPO ELIMINATÓRIA ==================== */
           if (b.tipo === 'eliminatoria') {
             partidas.forEach(p => {
               const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
@@ -3327,6 +3336,13 @@
               <button class="time-btn ${classeA} ${emptyA}" data-pid="${p.id}" data-venc="${p.equipeA}" data-atual="${p.vencedor}" ${disA}>${esc(nomeA)}</button>
               <span class="matchup-x">×</span>
               <button class="time-btn ${classeB} ${emptyB}" data-pid="${p.id}" data-venc="${p.equipeB}" data-atual="${p.vencedor}" ${disB}>${esc(nomeB)}</button>
+            </div>
+            <div class="matchup-horario">
+              <span style="font-size:12.5px;color:var(--txt-3);white-space:nowrap">🕐 Inserir horário:</span>
+              <input type="time" class="horario-input" data-horario-pid="${p.id}"
+                     value="${esc(p.horario || '')}" />
+              <span class="horario-msg" data-horario-msg="${p.id}"
+                    style="font-size:11.5px;color:var(--txt-3)"></span>
             </div>`;
             });
           }
@@ -3355,7 +3371,7 @@
           });
         });
 
-        // --- Listeners dos vencedores (blocos tipo eliminatória) ---
+                // --- Listeners dos vencedores (blocos tipo eliminatória) ---
         blocoMataMata.querySelectorAll('.time-btn').forEach(btn => {
           if (btn.disabled) return;
           btn.onclick = async () => {
@@ -3370,6 +3386,33 @@
               renderPodio();
             } catch (e) { toast(e.message, true); }
           };
+        });
+
+        // --- Listeners dos horários ---
+        blocoMataMata.querySelectorAll('.horario-input').forEach(inp => {
+          inp.addEventListener('change', async () => {
+            const pid = inp.dataset.horarioPid;
+            const horario = inp.value;
+            const msg = blocoMataMata.querySelector(`[data-horario-msg="${pid}"]`);
+            try {
+              await api('PUT', '/competicoes/' + id + '/partidas/' + pid, { horario });
+              const cAtual = state.competicoes.find(x => x.id === id);
+              (cAtual.partidas || []).forEach(p => {
+                if (p.id === pid) p.horario = horario;
+              });
+              if (msg) {
+                msg.style.color = 'var(--ok)';
+                msg.textContent = 'salvo';
+                setTimeout(() => { msg.textContent = ''; }, 1800);
+              }
+            } catch (e) {
+              if (msg) {
+                msg.style.color = 'var(--err)';
+                msg.textContent = 'erro';
+              }
+              toast(e.message, true);
+            }
+          });
         });
       }
 
@@ -3513,7 +3556,7 @@
           });
         });
 
-                // === Listeners dos placares ===
+        // === Listeners dos placares ===
         blocoGrupos.querySelectorAll('.placar-input').forEach(inp => {
           inp.addEventListener('change', async () => {
             const pid = inp.dataset.pid;

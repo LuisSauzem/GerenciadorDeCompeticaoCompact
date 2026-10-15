@@ -1273,8 +1273,8 @@
           ${classificacaoExibida.map((e, i) => `
             <div class="pos-card ${mostrarPontos && i === 0 && e.total > 0 ? 'destaque' : ''}">
               <div class="pos-num">${mostrarPontos
-                ? (i + 1) + 'º'
-                : (i < 3 ? ['🥇', '🥈', '🥉'][i] : '')}</div>
+            ? (i + 1) + 'º'
+            : (i < 3 ? ['🥇', '🥈', '🥉'][i] : '')}</div>
               <div class="pos-info">
                 <div class="pos-nome">${esc(e.equipe.nome)}</div>
                 ${mostrarPontos && e.penal > 0 ? `<div class="pos-meta">−${e.penal} pts de penalidade</div>` : ''}
@@ -1613,7 +1613,6 @@
         </div>`;
           }
 
-          // Confrontos (vale pra grupo e eliminatória)
           // Confrontos (grupo/repescagem mostram placar; eliminatória mostra vencedor)
           partidas.forEach(p => {
             const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
@@ -1626,40 +1625,52 @@
             if (b.tipo === 'grupo' || b.tipo === 'repescagem') {
               // Placar em caixinha: [Nome]  [1]  ×  [2]  [Nome]
               html += `
-          <div style="display:grid;grid-template-columns:1fr 44px 20px 44px 1fr;
-                      gap:8px;align-items:center;margin-top:8px;font-size:13.5px">
-            <div style="text-align:right;font-weight:600;overflow:hidden;
-                        text-overflow:ellipsis;white-space:nowrap;
-                        ${vencA ? 'color:var(--prim);font-weight:800' : ''}">
-              ${esc(nomeA)}
+          <div style="margin-top:8px">
+            <div style="display:grid;grid-template-columns:1fr 44px 20px 44px 1fr;
+                        gap:8px;align-items:center;font-size:13.5px">
+              <div style="text-align:right;font-weight:600;overflow:hidden;
+                          text-overflow:ellipsis;white-space:nowrap;
+                          ${vencA ? 'color:var(--prim);font-weight:800' : ''}">
+                ${esc(nomeA)}
+              </div>
+              <div style="text-align:center;padding:7px 4px;border-radius:8px;
+                          background:${gA !== '' ? 'var(--prim)' : 'var(--bg-3)'};
+                          color:${gA !== '' ? '#fff' : 'var(--txt-3)'};
+                          font-weight:800;font-size:14px">
+                ${gA === '' ? '–' : gA}
+              </div>
+              <div style="text-align:center;color:var(--txt-3);font-size:11px">×</div>
+              <div style="text-align:center;padding:7px 4px;border-radius:8px;
+                          background:${gB !== '' ? 'var(--prim)' : 'var(--bg-3)'};
+                          color:${gB !== '' ? '#fff' : 'var(--txt-3)'};
+                          font-weight:800;font-size:14px">
+                ${gB === '' ? '–' : gB}
+              </div>
+              <div style="font-weight:600;overflow:hidden;
+                          text-overflow:ellipsis;white-space:nowrap;
+                          ${vencB ? 'color:var(--prim);font-weight:800' : ''}">
+                ${esc(nomeB)}
+              </div>
             </div>
-            <div style="text-align:center;padding:7px 4px;border-radius:8px;
-                        background:${gA !== '' ? 'var(--prim)' : 'var(--bg-3)'};
-                        color:${gA !== '' ? '#fff' : 'var(--txt-3)'};
-                        font-weight:800;font-size:14px">
-              ${gA === '' ? '–' : gA}
-            </div>
-            <div style="text-align:center;color:var(--txt-3);font-size:11px">×</div>
-            <div style="text-align:center;padding:7px 4px;border-radius:8px;
-                        background:${gB !== '' ? 'var(--prim)' : 'var(--bg-3)'};
-                        color:${gB !== '' ? '#fff' : 'var(--txt-3)'};
-                        font-weight:800;font-size:14px">
-              ${gB === '' ? '–' : gB}
-            </div>
-            <div style="font-weight:600;overflow:hidden;
-                        text-overflow:ellipsis;white-space:nowrap;
-                        ${vencB ? 'color:var(--prim);font-weight:800' : ''}">
-              ${esc(nomeB)}
-            </div>
+            ${p.horario ? `
+              <div style="font-size:12px;color:var(--prim);font-weight:600;margin-top:3px;text-align:center">
+                🕐 Disputa às ${esc(fmtHora(p.horario))}
+              </div>
+            ` : ''}
           </div>`;
             } else {
-              // Eliminatória: mantém o formato clássico (time × time com destaque no vencedor)
+              // Eliminatória: mantém o formato clássico
               html += `
           <div class="chave-match">
             <div class="chave-time ${vencA ? 'venc' : ''} ${!p.equipeA ? 'vazio' : ''}">${esc(nomeA)}</div>
             <span class="chave-x">×</span>
             <div class="chave-time ${vencB ? 'venc' : ''} ${!p.equipeB ? 'vazio' : ''}">${esc(nomeB)}</div>
-          </div>`;
+          </div>
+          ${p.horario ? `
+            <div style="font-size:12px;color:var(--prim);font-weight:600;margin-top:3px;text-align:center">
+              🕐 Disputa às ${esc(fmtHora(p.horario))}
+            </div>
+          ` : ''}`;
             }
           });
         });
@@ -1691,7 +1702,7 @@
           </tr>`;
           }).join('');
 
-                    // Partidas com placar destacando o vencedor em roxo
+          // Partidas com placar destacando o vencedor em roxo
           const partidasHTML = g.partidas.map(p => {
             const nomeA = p.equipeA ? nomeEquipe(p.equipeA) : '—';
             const nomeB = p.equipeB ? nomeEquipe(p.equipeB) : '—';
